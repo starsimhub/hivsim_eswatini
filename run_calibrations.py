@@ -40,7 +40,7 @@ def make_calibration():
         hiv=dict(
             beta_m2f=      dict(low=0.002, high=0.014, guess=0.006, **ckw),
             eff_condom=    dict(low=0.5, high=0.9, guess=0.75, **ckw),
-            rel_init_prev= dict(low=2, high=15, guess=8, **ckw),
+            # rel_init_prev= dict(low=2, high=15, guess=8, **ckw),
             rel_dur_on_art=dict(low=1.0, high=20.0, guess=8.0, **ckw),
         ),
         structuredsexual=dict(

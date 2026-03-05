@@ -81,6 +81,7 @@ def extract_unaids(unaids_dir='raw_data/UNAIDS', country='Eswatini'):
 def format_calibration_data(prev_file='raw_data/SWAZILAND_nationalprevalence_all_updatedPHIA3.csv',
                             inc_file='raw_data/Swaziland_Incidence_Data2.csv',
                             unaids_dir='raw_data/UNAIDS',
+                            pop_file='raw_data/Swaziland_Population_Counts.xlsx',
                             outfile='data/eswatini_hiv_calib.csv'):
     """
     Read raw prevalence, incidence, and UNAIDS data and format for STIsim calibration.
@@ -162,8 +163,14 @@ def format_calibration_data(prev_file='raw_data/SWAZILAND_nationalprevalence_all
     inc_df = pd.DataFrame.from_dict(inc_rows, orient='index')
     inc_df.index.name = 'time'
 
+    # --- Population counts ---
+    print('Reading population data...')
+    pop = pd.read_excel(pop_file)
+    pop_df = pop.groupby('Year')['Population'].sum().rename('n_alive')
+    pop_df.index.name = 'time'
+
     # --- Combine all sources ---
-    calib = unaids_df.join(prev_df, how='outer').join(inc_df, how='outer')
+    calib = unaids_df.join(prev_df, how='outer').join(inc_df, how='outer').join(pop_df, how='outer')
     calib = calib.sort_index().reset_index()
 
     # Reorder columns: time, native hiv results, then analyzer results

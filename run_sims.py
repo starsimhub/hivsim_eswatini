@@ -42,10 +42,10 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None):
 
     # Diseases
     hiv = sti.HIV(
-        beta_m2f=0.02,
+        beta_m2f=0.01,
         eff_condom=0.85,
         init_prev_data=pd.read_csv('data/init_prev_hiv.csv'),
-        # rel_init_prev=8.,
+        rel_init_prev=.1,
     )
 
     # Interventions
@@ -83,7 +83,7 @@ if __name__ == '__main__':
 
     sim = make_sim(stop=2031, seed=seed)
     sim.run()
-    sim.plot('hiv')
+    sim.plot('hiv', annualize=True)
 
     df = sim.to_df(resample='year', use_years=True, sep='.')
     sc.saveobj(f'results/{LOCATION}_sim.df', df)

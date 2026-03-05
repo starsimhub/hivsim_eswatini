@@ -39,7 +39,7 @@ The model includes a structured sexual network with risk groups, HIV transmissio
 
 The scripts are designed to be run in order. Each step produces outputs used by the next.
 
-### Step 1: Generate calibration data (only needed once, or when raw data changes)
+### Step 1: Format the input data for HIVsim (only needed once, or when raw data changes)
 
 Run `utils.py`.
 
@@ -51,31 +51,109 @@ Run `run_sims.py`.
 
 Runs one sim with default parameters and saves results to `results/eswatini_sim.df`. Also opens a plot window showing HIV dynamics. Use this to check that the model is working before calibrating.
 
-### Step 3: Calibrate the model
+### Step 3: Calibrate the model (on VM/HPC)
 
-Run `run_calibrations.py`.
+Calibration is computationally intensive (1000 trials, each running a full sim) and must be done on a VM or HPC, not locally.
 
-Runs 1000 Optuna trials, each testing a different combination of parameters (transmission rate, condom efficacy, network structure, ART duration). Saves:
-- `results/eswatini_calib.obj` — full calibration object
-- `results/eswatini_pars.df` — dataframe of best-fit parameter sets
+#### 3a. Push your local changes
+
+Before moving to the VM, make sure all your code changes are committed and pushed. In VS Code:
+
+1. Open the **Source Control** panel (click the branch icon in the left sidebar, or press `Ctrl+Shift+G`)
+2. You'll see a list of changed files. Review them, then type a commit message (e.g., "update calibration parameters") in the text box at the top
+3. Click the **checkmark** button to commit
+4. Click the **"..." menu → Push** (or click the sync/upload icon) to push to GitHub
+
+Or from the terminal:
+```bash
+git add -A
+git commit -m "update calibration parameters"
+git push
+```
+
+#### 3b. Set up the VM environment (first time only)
+
+SSH into the VM, then create a conda environment and install dependencies:
+
+```bash
+# Create and activate environment
+conda create -n hiv python=3.11 -y
+conda activate hiv
+
+# Clone and install Starsim + STIsim
+git clone https://github.com/starsimhub/starsim.git
+cd starsim && pip install -e . && cd ..
+
+git clone https://github.com/starsimhub/stisim.git
+cd stisim && pip install -e . && cd ..
+
+# Clone this repo
+git clone https://github.com/starsimhub/hivsim_eswatini.git
+cd hivsim_eswatini
+```
+
+On subsequent sessions, just activate and pull:
+```bash
+conda activate hiv
+cd hivsim_eswatini
+git pull
+```
+
+#### 3c. Run calibration
+
+```bash
+python run_calibrations.py
+```
+
+This runs 1000 Optuna trials, each testing a different combination of parameters (transmission rate, condom efficacy, network structure, ART duration). It takes a while — typically 1-4 hours depending on the machine. When it finishes, it saves:
+- `results/eswatini_calib.obj` — full calibration object (large, but useful for debugging)
+- `results/eswatini_pars.df` — dataframe of best-fit parameter sets (small, this is what the next step uses)
 
 The calibration parameters and their ranges are defined in `make_calibration()` inside `run_calibrations.py`. To add or modify calibrated parameters, edit the `calib_pars` dictionary there.
 
-### Step 4: Run multi-sim with calibrated parameters
+#### 3d. Run multi-sim with calibrated parameters
 
-Run `run_msim.py`.
+Still on the VM, run:
+```bash
+python run_msim.py
+```
 
-Takes the top 200 parameter sets from calibration, runs a sim for each, and generates percentile statistics (median, 10-90% credible intervals). Saves `results/eswatini_calib_stats.df`.
+This takes the top 200 parameter sets from calibration, runs a sim for each, and generates percentile statistics (median, 10-90% credible intervals). Saves `results/eswatini_calib_stats.df`.
 
-### Step 5: Generate figures
+#### 3e. Push results back
 
-Run the plotting scripts:
+The result files are small enough to live in git. Commit and push them from the VM:
+```bash
+git commit -m "new calibration results"
+git push
+```
+
+These two files are what the plotting scripts need:
+- `eswatini_pars.df` — the best-fit parameter sets (used by `run_msim.py` if you want to re-run locally)
+- `eswatini_calib_stats.df` — the percentile summary statistics (used by the plot scripts)
+
+Do not add the `eswatini_calib.obj` file, it's larger and only needed for debugging. If needed, you can copy it to your local machine (ask for help).
+
+#### 3f. Pull results locally
+
+Back on your local machine, pull the new results:
+
+In VS Code: open the **Source Control** panel → click **"..." menu → Pull**
+
+Or from the terminal:
+```bash
+git pull
+```
+
+### Step 4: Generate figures (locally)
+
+Now that you have `results/eswatini_calib_stats.df` locally, run the plotting scripts:
 - `plot_fig1_hiv_calibration.py` — Fig 1: HIV epi (6 panels) — model bands vs UNAIDS data
 - `plot_fig2_hiv_by_age.py` — Fig 2: prevalence by age/sex vs PHIA surveys
 - `run_network_data.py` — extract network data (needed once before Fig 3)
 - `plot_fig3_network.py` — Fig 3: network structure (6 panels)
 
-Figures are saved to `figures/` at 200 dpi.
+Figures are saved to `figures/` at 200 dpi. Figure files are not added to Git.
 
 
 ## File descriptions
@@ -130,6 +208,53 @@ Figures are saved to `figures/` at 200 dpi.
 **Age bins**: The HIV disease module natively tracks 5-year bins from 15-35, plus wider bins (35-50, 50-65, 65-100). The `hiv_epi` analyzer adds finer 5-year bins above 35 (to match PHIA surveys) and broader UNAIDS ranges (0-14, 10-19, 15-24, 15-49, 15-100).
 
 **Adding a new calibration target**: (1) Add the raw data to `raw_data/`, (2) update `format_calibration_data()` in `utils.py` to include it with the correct column name, (3) re-run `utils.py`, (4) if the indicator isn't already a sim result, add it to the `hiv_epi` analyzer in `analyzers.py`.
+
+
+## Git hygiene
+
+GitHub has a hard limit of 100 MB per file, and repositories get slow and painful to work with if they accumulate large files. As a rule of thumb: **only commit files that are small (under ~10 MB) and that other people need**.
+
+### What's in `.gitignore`
+
+The file `.gitignore` in the repo root tells git to ignore certain files and folders. Currently it contains:
+
+```
+raw_data/       # Large source data (UNAIDS Excel files, PHIA CSVs, population data)
+raw_results/    # Any large intermediate outputs
+__pycache__/    # Python bytecode cache (auto-generated, never commit)
+.DS_Store       # macOS metadata files (auto-generated, never commit)
+*.pyc           # Compiled Python files
+.vscode/        # VS Code workspace settings (personal to each developer)
+```
+
+Anything matching these patterns is invisible to git — it won't show up in the Source Control panel and `git add -A` won't include it.
+
+### What's safe to commit
+
+- **Code** (`.py` files) — always
+- **Small data files** in `data/` (CSVs, typically < 1 MB) — yes
+- **Calibration result files** (`results/eswatini_pars.df`, `results/eswatini_calib_stats.df`) — yes, these are small (< 5 MB) and needed by the plotting scripts
+- **Figures** in `figures/` (PNGs, typically < 1 MB each) — yes
+- **`results/network_data.obj`** — yes, small
+- **Font files** in `assets/` — yes
+- **README, .gitignore** — yes
+
+### What NOT to commit
+
+- **`results/eswatini_calib.obj`** — this is the full calibration object and can be 50-200 MB. Do not commit it. If you need to share it, copy it directly (e.g., via `scp`)
+- **Anything in `raw_data/`** — already in `.gitignore`, but be careful not to force-add it
+- **Large simulation outputs** — if you save full sim objects (`.obj` files > 10 MB), don't commit them
+
+### How to modify `.gitignore`
+
+If you create new files or folders that should be excluded from git, add them to `.gitignore`. For example, if you start saving large scenario outputs to a `scenarios/` folder:
+
+1. Open `.gitignore` in VS Code
+2. Add a new line: `scenarios/`
+3. Save the file
+4. Commit the updated `.gitignore`
+
+If you accidentally commit a large file, ask for help — removing it from git history requires special commands.
 
 
 ## Data sources

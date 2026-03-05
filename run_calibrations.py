@@ -55,7 +55,7 @@ def make_calibration():
     sres = ['hiv.n_on_art', 'n_alive']
 
     sim = make_sim(verbose=-1, seed=1)
-    data = pd.read_csv(f'data/{LOCATION}_all_data.csv')
+    data = pd.read_csv(f'data/{LOCATION}_hiv_calib.csv')
 
     weights = {
     }

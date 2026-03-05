@@ -59,7 +59,7 @@ def prune_columns(df):
     """
     KEEP_PREFIXES = [
         # Core epi
-        'time', 'n_alive',
+        'timevec', 'n_alive',
         'hiv.prevalence', 'hiv.n_infected', 'hiv.new_infections', 'hiv.new_deaths',
         'hiv.n_on_art', 'hiv.p_on_art', 'hiv.n_diagnosed', 'hiv.new_diagnoses',
         'hiv.new_agents_on_art', 'hiv.incidence',
@@ -94,7 +94,7 @@ def save_results(sims):
     print(f'  Combined DataFrame: {len(resdf)} rows, {len(resdf.columns)} columns')
 
     # Generate percentile statistics grouped by year
-    cs = resdf.groupby(resdf.time).describe(percentiles=percentiles)
+    cs = resdf.groupby(resdf.timevec).describe(percentiles=percentiles)
     sc.saveobj(f'{RESULTS_DIR}/{LOCATION}_calib_stats.df', cs)
     print(f'Saved {RESULTS_DIR}/{LOCATION}_calib_stats.df')
 

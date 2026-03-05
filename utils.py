@@ -85,14 +85,22 @@ def format_calibration_data(prev_file='raw_data/SWAZILAND_nationalprevalence_all
     """
     Read raw prevalence, incidence, and UNAIDS data and format for STIsim calibration.
 
-    Output CSV has one row per year. Columns use sim result naming:
-        - hiv.prevalence_15_49, hiv.n_infected, hiv.new_infections, ...: from UNAIDS
-        - hiv.prevalence_m_15_20, hiv.prevalence_f_15_20, ...: age/sex-specific from PHIA surveys
-        - hiv.incidence_m_15_49, hiv.incidence_f_15_49: sex-specific from PHIA surveys
-
-    Missing year/indicator combinations are NaN (calibrator skips them).
+    Column names must match what sim.to_df(sep='.') produces:
+        - Native HIV results: hiv.prevalence_15_49, hiv.n_infected, etc.
+        - hiv_epi analyzer results: hiv_epi.prevalence_15_24, hiv_epi.n_infected_15_49, etc.
+        - PHIA age/sex prevalence:
+            - Native bins (15-35): hiv.prevalence_f_15_20, etc.
+            - Analyzer bins (35+): hiv_epi.prevalence_f_35_40, etc.
+        - PHIA incidence: hiv_epi.incidence_f_15_49, hiv_epi.incidence_15_100, etc.
     """
     sex_map = {0: 'm', 1: 'f'}
+
+    # Native HIV result columns (from the disease module's default age bins)
+    native_prevalence_bins = {(15, 20), (20, 25), (25, 30), (30, 35)}
+
+    # UNAIDS columns that map to native sim results (no age suffix or overall)
+    native_unaids = {'hiv.n_infected', 'hiv.n_infected_f', 'hiv.new_infections',
+                     'hiv.new_deaths', 'hiv.prevalence_15_49'}
 
     # --- UNAIDS data ---
     print('Reading UNAIDS data...')
@@ -105,6 +113,14 @@ def format_calibration_data(prev_file='raw_data/SWAZILAND_nationalprevalence_all
     for c in prev_cols:
         unaids_df[c] = unaids_df[c] / 100
 
+    # Rename non-native UNAIDS columns to use hiv_epi prefix
+    rename = {}
+    for c in unaids_df.columns:
+        if c not in native_unaids:
+            new_name = c.replace('hiv.', 'hiv_epi.', 1)
+            rename[c] = new_name
+    unaids_df = unaids_df.rename(columns=rename)
+
     # --- PHIA survey prevalence: age/sex-specific ---
     print('Reading PHIA prevalence data...')
     prev = pd.read_csv(prev_file)
@@ -115,7 +131,11 @@ def format_calibration_data(prev_file='raw_data/SWAZILAND_nationalprevalence_all
         sex = sex_map[row['Gender']]
         lo = int(row['start age'])
         hi = lo + 5
-        col = f'hiv.prevalence_{sex}_{lo}_{hi}'
+        # Use native prefix for bins the disease module tracks, analyzer prefix for others
+        if (lo, hi) in native_prevalence_bins:
+            col = f'hiv.prevalence_{sex}_{lo}_{hi}'
+        else:
+            col = f'hiv_epi.prevalence_{sex}_{lo}_{hi}'
         prev_rows.setdefault(year, {})[col] = row['NationalPrevalence']
 
     prev_df = pd.DataFrame.from_dict(prev_rows, orient='index')
@@ -134,9 +154,9 @@ def format_calibration_data(prev_file='raw_data/SWAZILAND_nationalprevalence_all
         val = row['Incidence'] / 100  # percentage to proportion
 
         if gender in sex_map:
-            col = f'hiv.incidence_{sex_map[gender]}_{lo}_{hi}'
+            col = f'hiv_epi.incidence_{sex_map[gender]}_{lo}_{hi}'
         else:
-            col = f'hiv.incidence_{lo}_{hi}'
+            col = f'hiv_epi.incidence_{lo}_{hi}'
         inc_rows.setdefault(year, {})[col] = val
 
     inc_df = pd.DataFrame.from_dict(inc_rows, orient='index')
@@ -146,11 +166,10 @@ def format_calibration_data(prev_file='raw_data/SWAZILAND_nationalprevalence_all
     calib = unaids_df.join(prev_df, how='outer').join(inc_df, how='outer')
     calib = calib.sort_index().reset_index()
 
-    # Reorder columns: time, UNAIDS, then PHIA prevalence, then PHIA incidence
-    unaids_cols = sorted(unaids_df.columns)
-    phia_prev_cols = sorted(prev_df.columns)
-    phia_inc_cols = sorted(inc_df.columns)
-    col_order = ['time'] + unaids_cols + phia_prev_cols + phia_inc_cols
+    # Reorder columns: time, native hiv results, then analyzer results
+    native_cols = sorted([c for c in calib.columns if c.startswith('hiv.') or c == 'n_alive'])
+    analyzer_cols = sorted([c for c in calib.columns if c.startswith('hiv_epi.')])
+    col_order = ['time'] + native_cols + analyzer_cols
     calib = calib[col_order]
 
     # Save

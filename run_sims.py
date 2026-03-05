@@ -11,6 +11,7 @@ import stisim as sti
 
 # From this repo
 from interventions import make_interventions
+from analyzers import hiv_epi
 
 # Constants
 LOCATION = 'eswatini'
@@ -49,6 +50,12 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None):
 
     # Interventions
     interventions = make_interventions()
+
+    # Default analyzers
+    default_analyzers = [hiv_epi()]
+    if analyzers is not None:
+        default_analyzers += list(analyzers)
+    analyzers = default_analyzers
 
     simpars = dict(
         use_migration=True, rand_seed=seed, n_agents=10e3, start=start, stop=stop, verbose=verbose,

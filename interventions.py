@@ -64,10 +64,10 @@ def get_testing_products():
 
 def make_interventions():
 
-    n_art = pd.read_csv(f'data/n_art.csv').set_index('year')
+    art_data = pd.read_csv('data/art_coverage.csv')
     # n_vmmc = pd.read_csv(f'data/n_vmmc.csv').set_index('year')
     tests = get_testing_products()
-    art = sti.ART(coverage_data=n_art, future_coverage={'year': 2022, 'prop': 0.90})
+    art = sti.ART(coverage=art_data)
     # vmmc = sti.VMMC(coverage_data=n_vmmc)
     prep = sti.Prep()
 

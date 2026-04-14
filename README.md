@@ -1,8 +1,10 @@
-# hivsim_eswatini
+# HIVSim Eswatini Model
 
 Agent-based HIV model for Eswatini, built on [STIsim](https://github.com/starsimhub/stisim) and [Starsim](https://github.com/starsimhub/starsim).
 
 The model includes a structured sexual network with risk groups, HIV transmission, testing (FSW-targeted, general population, low-CD4), ART, and PrEP. It is calibrated to UNAIDS estimates and PHIA household survey data.
+
+## [Project Docs](hivsim_swz_docs.md)
 
 
 ## Prerequisites

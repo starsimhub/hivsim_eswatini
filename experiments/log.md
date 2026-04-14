@@ -66,3 +66,33 @@ Keep change. Proceed to fix underlying allocation bug (experiment 002).
 
 ### Decision
 Keep fix. Major improvement in reproducing stratified ART inputs. Submit PR to stisim upstream.
+
+---
+
+## 003 — Lower sexual debut age to DHS eSwatini values
+- **Date**: 2026-04-14
+- **Commit**: (pending)
+- **Branch**: adam/model-dev
+
+### What changed
+- Added `debut_pars_f=[17.5, 2.5]` and `debut_pars_m=[18.5, 2.5]` to `StructuredSexual` in `run_sims.py`
+- Previously using stisim package defaults: F=20yr, M=21yr (lognormal)
+- New values based on DHS eSwatini (median ~17-18yr F, ~18-19yr M)
+
+### Why
+- Package defaults were generic, not country-specific
+- EMOD calibrated to ~16.3yr F, ~17.5yr M
+- Late debut (20yr) delayed network entry by 3-4 years, reducing HIV exposure for young adults
+- Model was under-predicting prevalence in young women (15-25)
+
+### Results
+- **Incidence**: Higher overall, especially early epidemic. Peak ~5% vs ~4% before. Female incidence now clearly above male (more realistic sex differential). Model now overshoots PHIA 2011 incidence.
+- **Prevalence by age/sex**: Young women (15-25) prevalence now higher and closer to SDHS/PHIA survey data. Overall prevalence somewhat elevated across age groups.
+- **Implication**: Model is running "hotter" — needs re-calibration to let beta_m2f and other free parameters adjust to compensate for earlier debut.
+
+### Figures
+- `experiments/003_debut_age/before_*.png` — pre-change (from experiment 002)
+- `experiments/003_debut_age/after_*.png` — post-change
+
+### Decision
+Keep change — direction is correct and produces more realistic age patterns. Re-calibration needed before further parameter tuning.

@@ -57,7 +57,19 @@ def get_testing_products():
         eligibility=low_cd4_eligibility,
         label='low_cd4_testing',
     )
-    tests = [fsw_testing, other_testing, low_cd4_testing]
+    # ANC testing: test undiagnosed pregnant women in first trimester
+    anc_eligibility = lambda sim: sim.demographics.pregnancy.tri1_uids[
+        ~sim.diseases.hiv.diagnosed[sim.demographics.pregnancy.tri1_uids]
+    ]
+    anc_testing = sti.HIVTest(
+        test_prob_data=0.9,
+        dt_scale=False,
+        name='anc_testing',
+        eligibility=anc_eligibility,
+        label='anc_testing',
+    )
+
+    tests = [fsw_testing, other_testing, low_cd4_testing, anc_testing]
 
     return tests
 

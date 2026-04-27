@@ -1,0 +1,13 @@
+[project]
+name = "hivsim-eswatini"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "starsim",
+    "stisim",
+    "matplotlib",
+]
+
+[tool.uv.sources]
+starsim = { path = "../starsim", editable = true }
+stisim  = { path = "../stisim",  editable = true }

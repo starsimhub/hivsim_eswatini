@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 .vscode/
 .claude/
+
+# figures/ is scratch — keepers go in experiments/NNN_topic/figures/
+figures/*
+!figures/README.md

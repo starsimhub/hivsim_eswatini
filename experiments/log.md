@@ -2,6 +2,18 @@
 
 Running record of changes to the Eswatini HIV model, their rationale, and observed effects.
 
+## Structure
+
+- One folder per experiment: `NNN_topic/`
+- Figures live in `NNN_topic/figures/` (use `before/` + `after/` subfolders if comparing pre/post state). At minimum, every closed-out experiment ends with `dashboard_fit.png` and `dashboard_network.png` summarizing the post-experiment model state.
+- This `log.md` is the single source of truth for what changed, why, and the decision
+- The repo's top-level `figures/` directory is **scratch only** — overwritten freely by plot scripts. Promote keepers into `experiments/NNN_topic/figures/` when closing out an experiment.
+- `plot_dashboard.py` and `plot_beta_sweep.py` accept `--outdir`, so final runs can write directly into the experiment folder, e.g.:
+    ```
+    python plot_dashboard.py --label final --outdir experiments/004_beta_m2f/figures
+    python plot_beta_sweep.py --outdir experiments/004_beta_m2f/figures
+    ```
+
 ---
 
 ## 001 — Stratified ART coverage by age, sex, and year
@@ -86,9 +98,9 @@ Keep fix. Major improvement in reproducing stratified ART inputs. Submit PR to s
 - Model was under-predicting prevalence in young women (15-25)
 
 ### Results
-- **Incidence**: Higher overall, especially early epidemic. Peak ~5% vs ~4% before. Female incidence now clearly above male (more realistic sex differential). Model now overshoots PHIA 2011 incidence.
+- **Incidence**: Higher overall, especially early epidemic. Peak ~5% vs ~4% before. Female incidence now clearly above male (more realistic sex differential). Model still within PHIA 2011/2016 CIs but running hotter than before.
 - **Prevalence by age/sex**: Young women (15-25) prevalence now higher and closer to SDHS/PHIA survey data. Overall prevalence somewhat elevated across age groups.
-- **Implication**: Model is running "hotter" — needs re-calibration to let beta_m2f and other free parameters adjust to compensate for earlier debut.
+- **Implication**: Model is running somewhat hotter — re-calibration would let beta_m2f and other free parameters re-optimize, but current fit is still reasonable.
 
 ### Figures
 - `experiments/003_debut_age/before_*.png` — pre-change (from experiment 002)
@@ -96,3 +108,116 @@ Keep fix. Major improvement in reproducing stratified ART inputs. Submit PR to s
 
 ### Decision
 Keep change — direction is correct and produces more realistic age patterns. Re-calibration needed before further parameter tuning.
+
+---
+
+## 003b — Debut age follow-up: tighten SD and sensitivity sweep
+- **Date**: 2026-04-22
+- **Branch**: master
+
+### What changed
+- Tightened debut SD from 2.5 → 1 in `run_sims.py` (F=17.5 ± 1, M=18.5 ± 1)
+- Added new analysis scripts:
+  - `plot_debut_check.py` — boxplot + KDE density comparison (old vs new params)
+  - `plot_debut_sensitivity.py` — sweep female debut 13–20 (male = female + 1), 10 seeds each
+  - `plot_debut_vs_targets.py` — 10-seed run at current settings vs PHIA/UNAIDS calibration targets
+- Fixed a latent bug in `plot_debut_check.py`: starsim deep-copies analyzers during sim init, so reading data from the original analyzer reference after `sim.run()` gives empty state. Retrieve via `sim.analyzers[...]` instead.
+
+### Why
+- SD=2.5 produced a very wide debut distribution (IQR ~3.4 yr) that overlapped heavily with the "old" setting — obscuring the effect of the mean change
+- Wanted to understand the dose-response of debut age on incidence
+- Wanted to check whether the new debut (F=17.5, M=18.5) now hits sex-stratified calibration targets
+
+### Results
+- **Tighter SD (1.0)** produces visibly separated old/new distributions; 2021 IQR ~1.4 yr for both sexes
+- **Sensitivity sweep** (8 debut ages × 10 seeds): clear monotonic gradient — each year earlier in debut age increases peak incidence by roughly 0.3–0.5 per 100 PY during the 1990s–2000s epidemic peak. Gradient is comparable for both sexes. Curves converge after ~2015 as ART scale-up dominates.
+- **Target comparison** (10 seeds, current settings):
+  - **Male incidence**: tracks 2016 (~0.5 sim vs 0.85 target) and 2021 (~0.25 sim vs 0.2 target) reasonably well
+  - **Female incidence**: sim underestimates — 0.7 vs 1.7 target (2016); 0.4 vs 1.4 target (2021). The ~2× female-to-male ratio in targets is not reproduced
+  - **Prevalence by age**: young women (15–25) still low vs targets; 30–50 age range tracks well; 50–65 fits within bands
+
+### Implication
+Debut age change alone is insufficient to close the F:M incidence gap. The remaining gap points to `beta_m2f` (male-to-female transmission probability) as the next parameter to revisit.
+
+### Figures
+- `experiments/003_debut_age/debut_age_check.png` — boxplot of debut ages at 2000/2010/2016/2021
+- `experiments/003_debut_age/debut_age_density_2010.png` — KDE densities at year 2010
+- `experiments/003_debut_age/incidence_debut_comparison.png` — 1-seed incidence old vs new
+- `experiments/003_debut_age/incidence_debut_sensitivity.png` — 10-seed sweep across debut ages
+- `experiments/003_debut_age/incidence_vs_targets.png` — sim mean/band vs PHIA targets
+- `experiments/003_debut_age/prevalence_by_age_sex_vs_targets.png` — age-stratified prevalence vs targets
+- Archive mirror: `figures/archive/2026-04-22_debut_age_sensitivity/`
+
+### Decision
+Keep SD=1. Proceed to experiment 004: revisit `beta_m2f` to close the sex-stratified incidence gap.
+
+---
+
+## 004 — Close the F:M incidence and absolute-level gaps
+
+- **Date**: 2026-05-04
+- **Branch**: master
+- **Motivation**: After 003b, female incidence under-predicts by ~2× and the F:M ratio is too narrow (~1.4× sim vs ~2× PHIA). Several candidate levers: `rel_beta_f2m`, `beta_m2f`, condom use, age-stratified susceptibility.
+
+### Three sub-experiments
+
+**(a) `rel_beta_f2m` sweep** — `plot_beta_sweep.py` over [0.125, 0.25, 0.5], 3 seeds each.
+- Lower `rel_beta_f2m` widens F:M ratio but *also drops absolute incidence* (less F→M transmission means fewer infected men, fewer onward infections to women)
+- 0.5 (default): F:M ~1.4×; 0.25: F:M ~2× (matches PHIA); 0.125: F:M ~3× (overshoots)
+- **Conclusion**: `rel_beta_f2m=0.25` reproduces the F:M ratio but does not close the absolute-incidence gap on its own.
+
+**(b) Condom-use sensitivity sweep** — `plot_condom_sweep.py` scaling stisim defaults by [1.0, 0.7, 0.5, 0.3], holding `rel_beta_f2m=0.25`. 3 seeds × 4 scenarios.
+- Stisim defaults (post-2005 plateau ~0.7 mixed, 0.9 MM/HH) appear to over-protect when interpreted as act-level usage (DHS surveys ask "ever used at last sex" — consistency is lower than ever-use)
+- **0.5× scaling** brings 2016 sim to F~1.4 / M~0.8 vs PHIA F=1.7 / M=0.85 — closest fit
+- 0.3× overshoots female slightly
+- **Decision**: Adopt 0.5× scaling for non-LL pairings. LL kept at marital baseline (~1%). FSW–Client also scaled (could argue for holding 0.95 — left for future calibration).
+
+**(c) Adopt `rel_sus_age` for young women** — cherry-picked from unmerged stisim PR `fix/395-age-dep-rel-beta`.
+- New API: `rel_sus_age=[(15,25,'f',1.7), (25,50,'f',1.0), (15,50,'m',1.0)]`
+- 1.7× susceptibility for women 15–24 (per-agent multiplier on `rel_sus`)
+- Motivated by mucosal/cervical immaturity literature; partly compensates for the model's tendency to under-predict young-women prevalence
+- Combined with `rel_beta_f2m=0.25`, young women carry ~6.8× per-act acquisition risk vs same-age men in this configuration
+
+### Stisim provenance
+
+- Cherry-picked commits onto local `main` (preserving the local ART allocation fix from experiment 002):
+  - `827d720` — Add age-dependent M→F susceptibility: `rel_beta_m2f_by_age`
+  - `d18413e` — Rename `rel_beta_m2f_by_age` → `rel_sus_age`; add sex stratification
+- Skipped the v1.5.4 version-bump commit. Did NOT pull from upstream `main` because subsequent upstream changes (PMTCT uplift, coverage refactor) would have wiped the local ART fix.
+
+### Final configuration (committed in `run_sims.py`)
+
+```python
+hiv = sti.HIV(
+    beta_m2f=0.01,
+    rel_beta_f2m=0.25,                          # was 0.5 (default)
+    rel_sus_age=[(15,25,'f',1.7), (25,50,'f',1.0), (15,50,'m',1.0)],  # new
+    eff_condom=0.85,
+    ...
+)
+condom_data = csv * 0.5 (non-LL rows only)      # was csv unchanged
+```
+
+### Results (10-seed dashboards)
+
+- **Female incidence (15–49)**: 2016 sim ~1.5 vs PHIA 1.7 — within band; 2021 sim ~0.8 vs PHIA 1.4 — below
+- **Male incidence (15–49)**: 2016 sim ~0.5 vs PHIA 0.85 — below; 2021 sim ~0.3 vs PHIA 0.2 — slightly above
+- **F:M incidence ratio**: ~2× across time, matches PHIA
+- **Prevalence by age & sex**: Now tracks all four survey years (2007/2011/2016/2021) tightly across age bins. Largest residual gap: female prevalence 50+ slightly low.
+- **ART coverage by age & sex**: Matches PHIA across age groups for both sexes.
+
+### Caveats
+
+- Original calibration found `beta_m2f` and `eff_condom` against the *unscaled* stisim default `condom_data`. Halving the condom data without re-calibrating means those two parameters are now miscalibrated — `beta_m2f=0.01` is likely too low, `eff_condom=0.85` is conditional on the old condom_data. **Re-calibration with a `condom_scale` free parameter is the right next move** before further structural changes.
+- `rel_sus_age=1.7` for young women is the dev's example value — not literature-calibrated. Should also be a candidate free parameter.
+
+### Figures (in `experiments/004_beta_m2f/figures/`)
+
+- `beta_f2m_sweep.png` — `rel_beta_f2m` sweep (sub-experiment a)
+- `condom_use_sweep.png` — condom scaling sweep (sub-experiment b)
+- `dashboard_fit_004_final.png` — 10-seed fit dashboard at adopted configuration
+- `dashboard_network_004_final.png` — 10-seed network dashboard at adopted configuration
+
+### Decision
+
+Adopt all three changes as the new baseline (committed to `run_sims.py`). Defer re-calibration to a separate cycle on a VM. Proceed to experiment 005: update acute HIV parameters to Bellan 2015 central estimates (cherry-pick `a5e9ec1` from upstream).

@@ -107,13 +107,46 @@ with SHIMS3 (recollection: 50–60%), though slightly low. Possible explanations
 slightly low vs SHIMS2 actuals, (3) the 2021 projections are conservative. Worth
 cross-checking against the actual SHIMS3 report when available.
 
-### Pre-2007 era
+### Pre-program baseline (1990 anchor — added in followup)
 
-The CSV includes only 2007/2016/2021 data points. Stisim's `smoothinterp` will
-hold the 2007 values constant for years before 2007 (sim starts 1985). This
-implies low-baseline MMC (~4–20% by age) throughout the pre-program era, which
-roughly approximates traditional MC. For the experiment's calibration window
-(2007+), this is fine.
+`sc.smoothinterp` holds boundary values constant outside the data range, so the
+earliest data point in the CSV becomes the "1985 baseline" by extrapolation.
+With only 2007/2016/2021 anchors, this propagated the SDHS 2007 [35,40)=0.20
+value back to 1985, giving an unrealistically high 20% MC baseline for that
+cohort in the 1980s.
+
+Fix: added a **1990 anchor row** with low values calibrated to SHIMS3 nonmedical
+MMC (which captures lifetime traditional MC):
+
+| Age bin | 1990 baseline |
+|---|---|
+| [10,15) | 0.005 |
+| [15,20) | 0.01 |
+| [20,25)–[25,30) | 0.02 |
+| [30,35) | 0.03 |
+| [35,40)–[60,65) | 0.04 |
+
+Pre-2007 trajectory now linearly ramps from 1990 baseline to SDHS 2007 values.
+Pre-1990 (rare in sim — start year is 1985) is held constant at 1990 baseline.
+
+### SDHS 2007 validation
+
+User provided actual SDHS 2007 circumcision-by-age data, which validates the
+EMOD JSON 2007 values (and confirms the [35,40)=0.20 is real, not placeholder):
+
+| Age | SDHS 2007 % | EMOD/CSV |
+|---|---|---|
+| 15-19 | 4.2 | 0.04 ✓ |
+| 20-24 | 6.5 | 0.07 ✓ |
+| 25-29 | 7.9 | 0.08 ✓ |
+| 30-34 | 9.9 | 0.10 ✓ |
+| 35-39 | **19.7** | **0.20 ✓** |
+| 40-44 | 12.5 | 0.12 ✓ |
+| 45-49 | 11.9 | 0.12 ✓ |
+
+The 35-39 bump is real (cohort born 1968-1972 had elevated traditional MC; SDHS
+shows 56.9% of those circumcisions happened pre-age-13). 50+ values are EMOD
+extrapolations since SDHS 2007 didn't survey men 50+.
 
 ## Scope of experiment 005
 

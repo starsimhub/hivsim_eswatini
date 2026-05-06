@@ -247,7 +247,7 @@ Adopt all three changes as the new baseline (committed to `run_sims.py`). Defer 
 ### Data triangulation
 
 See `experiments/005_vmmc/notes.md` for full detail. Summary:
-- **2007 values**: from EMOD JSON (SDHS 2006-07 — verified for young ages; ages 40+ are flat at 0.12 and likely placeholder)
+- **2007 values**: from EMOD JSON, **validated against actual SDHS 2007 data** (15-19 through 45-49 match within rounding; the [35,39)=0.197 ≈ 0.20 anomaly is a real cohort effect, not a placeholder). 50+ values remain EMOD extrapolations since SDHS 2007 didn't survey men 50+.
 - **2016 values**: from EMOD JSON (SHIMS2 — strongly age-stratified, well-attested)
 - **2021 values**: replaced with **SHIMS3 official Table 12.5** (medical + nonmedical circumcision prevalence by 5-year bin), found in `data/241123_SHIMS_ENG_RR3_Final-1.pdf`. Cross-checks: SHIMS3 reports 47.2% medical + 1.1% nonmedical = 48.3% total for 15-49.
 - The EMOD 2021 values were "EXTRAPOLATED" per the JSON comment. They turned out
@@ -301,3 +301,9 @@ The network dashboard's panel C (condom use by partnership) still shows the *uns
 ### Decision
 
 Adopt VMMC integration as the new baseline. Male incidence under-prediction is a known consequence of adding the VMMC effect without re-calibrating `beta_m2f` — the right place to address it is the VM-based recalibration cycle, with `condom_scale`, `eff_circ`, `rel_sus_age` and the existing free parameters jointly tuned. Proceed to experiment 006: cherry-pick Bellan acute params (`a5e9ec1`).
+
+### Followup (same-day): pre-program baseline correction
+
+The initial 005 commit had only 2007/2016/2021 data points in the CSV, which caused `sc.smoothinterp` to propagate the SDHS 2007 [35,40)=0.20 value back to the sim start (1985). Pre-2000 [35,40) MMC was therefore an unrealistic 20%.
+
+Fix: added a **1990 anchor row** to `data/vmmc_coverage.csv` with values 0.005–0.04 calibrated to SHIMS3 nonmedical-MMC rates. Pre-2007 trajectory now ramps linearly from low traditional-MC baseline up to the validated SDHS 2007 values. User confirmed SDHS 2007 measurements directly, validating the EMOD JSON for 15-49 within rounding (including the 35-39 bump).

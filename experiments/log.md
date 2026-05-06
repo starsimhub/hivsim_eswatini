@@ -220,4 +220,84 @@ condom_data = csv * 0.5 (non-LL rows only)      # was csv unchanged
 
 ### Decision
 
-Adopt all three changes as the new baseline (committed to `run_sims.py`). Defer re-calibration to a separate cycle on a VM. Proceed to experiment 005: update acute HIV parameters to Bellan 2015 central estimates (cherry-pick `a5e9ec1` from upstream).
+Adopt all three changes as the new baseline (committed to `run_sims.py`). Defer re-calibration to a separate cycle on a VM. Proceed to experiment 005.
+
+---
+
+## 005 — VMMC integration with prevalence-target semantics
+
+- **Date**: 2026-05-06
+- **Branch**: master (HIVsim) / local main (stisim)
+- **Motivation**: Add Voluntary Medical Male Circumcision to the model with PHIA-aligned prevalence targets, since the previous panel F was a placeholder. Bellan acute params shifted to experiment 006.
+
+### What changed
+
+**Stisim patch** (local mod to `star_sim/stisim/stisim/interventions/hiv_interventions.py`):
+- Added `prevalence_target=True` flag to `VMMC` (default on for stratified data)
+- New `_apply_prevalence_target()` method: for each (age_bin, sex) stratum, top up circumcisions to match `p_vmmc` interpreted as target prevalence (proportion of all alive males in stratum). Never reduces (VMMC is irreversible).
+- Mirrors ART's `art_coverage_correction()` design pattern
+- Legacy hazard interpretation preserved if `prevalence_target=False` or coverage is non-stratified
+- Candidate for upstream PR (alongside the experiment-002 ART fix)
+
+**Eswatini repo**:
+- `data/vmmc_coverage.csv` — 5-year age bins ([10,15) through [60,65)), male only, at 2007/2016/2021
+- `interventions.py` — VMMC enabled with the new CSV
+- `plot_dashboard.py` — added `VMMCPrevByAge` analyzer; replaced panel F placeholder with real VMMC coverage plot (4 broader bins: [15,25), [25,35), [35,45), [45,65))
+
+### Data triangulation
+
+See `experiments/005_vmmc/notes.md` for full detail. Summary:
+- **2007 values**: from EMOD JSON (SDHS 2006-07 — verified for young ages; ages 40+ are flat at 0.12 and likely placeholder)
+- **2016 values**: from EMOD JSON (SHIMS2 — strongly age-stratified, well-attested)
+- **2021 values**: replaced with **SHIMS3 official Table 12.5** (medical + nonmedical circumcision prevalence by 5-year bin), found in `data/241123_SHIMS_ENG_RR3_Final-1.pdf`. Cross-checks: SHIMS3 reports 47.2% medical + 1.1% nonmedical = 48.3% total for 15-49.
+- The EMOD 2021 values were "EXTRAPOLATED" per the JSON comment. They turned out
+  to be within ±5pp of SHIMS3 actuals for ages 15-39, but underestimated 45-59
+  (~0.18-0.20 EMOD vs 0.24-0.27 SHIMS3 actual). My initial cohort-progression
+  fix to [40,45)=0.30 was nearly right (SHIMS3 actual 0.325).
+
+### Stisim provenance (cumulative)
+
+Local main now has 3 commits ahead of upstream `main` (cherry-picked) plus 1 local-only mod:
+- `827d720` — Add age-dependent M→F susceptibility (cherry-pick from PR #395)
+- `d18413e` — Rename rel_beta_m2f_by_age → rel_sus_age (cherry-pick)
+- **NEW (uncommitted)**: VMMC prevalence-target patch in `hiv_interventions.py`
+- **Still uncommitted**: ART allocation fix from experiment 002 (also in `hiv_interventions.py`)
+
+Both local mods are candidates for upstream PRs. Should be committed to a feature branch in stisim before VM workflow.
+
+### Results (10-seed dashboards)
+
+**VMMC panel (F)**:
+- 15-25 bin: sim tracks the 2016/2021 targets cleanly (rapid scale-up captured)
+- 25-35 bin: tracks well; modest overshoot in 2021 due to cohort aging from [15,25)
+- 35-45 bin: tracks 2016 well; overshoots 2021 target (cohort effect from younger bin)
+- 45-65 bin: similar pattern; overshoots due to inflow from [35,45)
+
+The cohort-aging overshoots are *biologically correct* — VMMC is irreversible, so high prevalence in younger bins propagates upward over time. The PHIA point estimates are cross-sectional snapshots and don't fully reflect this stock-vs-flow distinction.
+
+**Male incidence (panel A)**: drops further from 004 (sim 2016: ~0.3 vs PHIA target 0.85). Expected — VMMC adds a 60% acquisition reduction for ~30%+ of adult males by 2016. Closing the gap requires re-calibration (especially `beta_m2f` upward).
+
+**Female incidence (panel A)**: roughly unchanged from 004 (~1.2 vs target 1.7). VMMC affects men's susceptibility, indirect effect on women via fewer infected men.
+
+**Prevalence by age & sex (B, C)**: unchanged fit quality from 004 — strong tracking across all 4 survey years.
+
+**ART coverage (D, E)**: unchanged from 004.
+
+### Caveat on display
+
+The network dashboard's panel C (condom use by partnership) still shows the *unscaled* CSV values, while the sim runs with the 0.5× scaled version (per experiment 004). Display-only issue — the sim itself uses the scaled values. Fix: have the plot apply the same scaling, or have run_sims.py write the scaled CSV to disk. Deferred.
+
+### Caveats on the data
+
+- 2007 ages 40+ are flat at 0.12 in the EMOD JSON — likely placeholder, real SDHS may differ
+- 2007 [35,40) at 0.20 is anomalously high vs surrounding bins; could reflect traditional MC cohort effect or data error
+- 2021 values are projections, not direct SHIMS3 measurements. Population-weighted average for [15,49) under our values ≈ 41%; SHIMS3 published overall MMC may be higher (~50–60% per recollection). If SHIMS3 reports a higher aggregate, scale all 2021 values up proportionally.
+
+### Figures (in `experiments/005_vmmc/figures/`)
+
+- `dashboard_fit_005_final.png` — 10-seed fit dashboard with new VMMC panel
+- `dashboard_network_005_final.png` — 10-seed network dashboard (unchanged from 004 except cohort effects)
+
+### Decision
+
+Adopt VMMC integration as the new baseline. Male incidence under-prediction is a known consequence of adding the VMMC effect without re-calibrating `beta_m2f` — the right place to address it is the VM-based recalibration cycle, with `condom_scale`, `eff_circ`, `rel_sus_age` and the existing free parameters jointly tuned. Proceed to experiment 006: cherry-pick Bellan acute params (`a5e9ec1`).

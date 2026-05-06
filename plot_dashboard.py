@@ -1,13 +1,13 @@
 """
 Experiment dashboards: two summary figures per run.
 
-  Dashboard 1 — Fit vs targets (2x3, 5 panels + 1 VMMC placeholder):
+  Dashboard 1 — Fit vs targets (2x3, 6 panels):
     A: Sex-stratified HIV incidence (15-49) vs PHIA targets w/ 95% CI bars
-    B: ART coverage by age group — Female
-    C: ART coverage by age group — Male
-    D: Prevalence by age at 3 survey years — Female
-    E: Prevalence by age at 3 survey years — Male
-    F: [VMMC placeholder, TBD]
+    B: Prevalence by age at 4 survey years — Female
+    C: Prevalence by age at 4 survey years — Male
+    D: ART coverage by age group — Female
+    E: ART coverage by age group — Male
+    F: VMMC coverage by age (sim lines + data targets at 2007/2016/2021)
 
   Dashboard 2 — Sexual network attributes (2x2):
     A: Age at sexual debut — CDF by sex
@@ -41,7 +41,10 @@ AGE_BINS_OLD = [(35, 40), (40, 45), (45, 50), (50, 55), (55, 60), (60, 65)]
 ALL_BINS = AGE_BINS_YOUNG + AGE_BINS_OLD
 
 ART_BINS = [(15, 25), (25, 35), (35, 45)]
+VMMC_BINS = [(15, 25), (25, 35), (35, 45), (45, 65)]  # broader bins for plotting; data CSV uses 5-yr bins
+VMMC_DATA_BINS = [(10,15),(15,20),(20,25),(25,30),(30,35),(35,40),(40,45),(45,50),(50,55),(55,60),(60,65)]
 PREV_YEARS = [2007, 2011, 2016, 2021]
+VMMC_SURVEY_YEARS = [2007, 2016, 2021]
 NETWORK_SNAPSHOT_YEAR = 2020
 LIFETIME_PARTNERS_CAP = 30
 PARTNERS_YEAR_CAP = 10  # cap for "partners in last year" histogram
@@ -52,6 +55,7 @@ F_COLOR = '#d62728'
 M_COLOR = '#1f77b4'
 F_ART_SHADES = ['#fbb4b9', '#f768a1', '#ae017e']
 M_ART_SHADES = ['#9ecae1', '#4292c6', '#08519c']
+M_VMMC_SHADES = ['#bdd7e7', '#6baed6', '#2171b5', '#08306b']  # 4 shades for 4 VMMC bins
 # Shades by survey year (lightest = earliest)
 F_YEAR_SHADES = {2007: '#fcae91', 2011: '#fb6a4a', 2016: '#cb181d', 2021: '#67000d'}
 M_YEAR_SHADES = {2007: '#bdd7e7', 2011: '#6baed6', 2016: '#2171b5', 2021: '#08306b'}
@@ -85,6 +89,34 @@ class ARTbyAgeSex(ss.Analyzer):
                     self.results[f'p_art_{sex_key}_{lo}_{hi}'][ti] = n_art / n_inf
                 else:
                     self.results[f'p_art_{sex_key}_{lo}_{hi}'][ti] = np.nan
+
+
+class VMMCPrevByAge(ss.Analyzer):
+    """Track male circumcision prevalence by age bin over time."""
+    def init_results(self):
+        super().init_results()
+        results = []
+        for lo, hi in VMMC_BINS:
+            results.append(ss.Result(f'p_circ_{lo}_{hi}', dtype=float, scale=False))
+        self.define_results(*results)
+
+    def step(self):
+        sim = self.sim
+        ti = self.ti
+        ppl = sim.people
+        if 'vmmc' not in sim.interventions:
+            for lo, hi in VMMC_BINS:
+                self.results[f'p_circ_{lo}_{hi}'][ti] = np.nan
+            return
+        circ = sim.interventions['vmmc'].circumcised
+        male = ppl.alive & ppl.male
+        for lo, hi in VMMC_BINS:
+            in_bin = male & (ppl.age >= lo) & (ppl.age < hi)
+            n_total = in_bin.count()
+            if n_total > 0:
+                self.results[f'p_circ_{lo}_{hi}'][ti] = (in_bin & circ).count() / n_total
+            else:
+                self.results[f'p_circ_{lo}_{hi}'][ti] = np.nan
 
 
 class PartnershipSnapshot(ss.Analyzer):
@@ -198,6 +230,7 @@ def run_sims(n_seeds):
     for seed in range(1, n_seeds + 1):
         print(f'  seed {seed}/{n_seeds}...')
         analyzers = [ARTbyAgeSex(),
+                     VMMCPrevByAge(),
                      PartnershipSnapshot(year=NETWORK_SNAPSHOT_YEAR),
                      RiskComposition(year=RISK_SNAPSHOT_YEAR)]
         sim = make_sim(seed=seed, verbose=-1, analyzers=analyzers)
@@ -213,6 +246,7 @@ def collect(sims):
     inc_f, inc_m = [], []
     prev_by_bin = {(s, lo, hi): [] for s in ['f', 'm'] for (lo, hi) in ALL_BINS}
     art_by_bin = {(s, lo, hi): [] for s in ['f', 'm'] for (lo, hi) in ART_BINS}
+    vmmc_by_bin = {(lo, hi): [] for (lo, hi) in VMMC_BINS}
     pairs_f, pairs_m = [], []
     lp_f, lp_m = [], []
     ply_f, ply_m = [], []  # partners in last year
@@ -222,6 +256,7 @@ def collect(sims):
         hiv = sim.results.hiv
         epi = sim.analyzers['hiv_epi']
         art_ana = sim.analyzers['artbyagesex']
+        vmmc_ana = sim.analyzers['vmmcprevbyage']
         net_snap = sim.analyzers['partnershipsnapshot']
 
         yrs, ann_f = annual_mean(yv, np.array(epi.results['incidence_f_15_49']))
@@ -239,6 +274,10 @@ def collect(sims):
             for lo, hi in ART_BINS:
                 _, a = annual_mean(yv, np.array(art_ana.results[f'p_art_{sex}_{lo}_{hi}']))
                 art_by_bin[(sex, lo, hi)].append(a)
+
+        for lo, hi in VMMC_BINS:
+            _, a = annual_mean(yv, np.array(vmmc_ana.results[f'p_circ_{lo}_{hi}']))
+            vmmc_by_bin[(lo, hi)].append(a)
 
         if net_snap.f_ages is not None:
             pairs_f.append(net_snap.f_ages)
@@ -263,6 +302,7 @@ def collect(sims):
     out['inc_m'] = np.array(inc_m) * 100
     out['prev_by_bin'] = {k: np.array(v) for k, v in prev_by_bin.items()}
     out['art_by_bin'] = {k: np.array(v) for k, v in art_by_bin.items()}
+    out['vmmc_by_bin'] = {k: np.array(v) for k, v in vmmc_by_bin.items()}
     out['pairs_f'] = np.concatenate(pairs_f) if pairs_f else np.array([])
     out['pairs_m'] = np.concatenate(pairs_m) if pairs_m else np.array([])
     out['lp_f'] = np.concatenate(lp_f) if lp_f else np.array([])
@@ -295,6 +335,41 @@ def band_ci(ax, x, arr, color, label=None, lw=2, ls='-', alpha_line=1.0):
     hi = np.nanpercentile(arr, 97.5, axis=0)
     ax.plot(x, med, color=color, lw=lw, ls=ls, label=label, alpha=alpha_line)
     ax.fill_between(x, lo, hi, color=color, alpha=BAND_ALPHA, linewidth=0)
+
+
+def _plot_vmmc_panel(ax, data, yrs, vmmc_data, title):
+    """Lines = sim circumcision prevalence by age bin; points = data targets aggregated to same bins."""
+    mask_yrs = (yrs >= 1990) & (yrs <= 2030)
+    x = yrs[mask_yrs]
+    for i, (lo, hi) in enumerate(VMMC_BINS):
+        color = M_VMMC_SHADES[i]
+        arr = data['vmmc_by_bin'][(lo, hi)][:, mask_yrs] * 100
+        band_ci(ax, x, arr, color, lw=1.8, label=f'{lo}–{hi}')
+
+        # Aggregate target data 5-yr bins into this broader bin
+        for sy in VMMC_SURVEY_YEARS:
+            sub = vmmc_data[(vmmc_data['Year'] == sy) &
+                            (vmmc_data['AgeBin'].apply(lambda ab: _bin_in(ab, lo, hi)))]
+            if len(sub):
+                avg = sub['p_vmmc'].mean() * 100
+                ax.scatter(sy, avg, color=color, s=45, edgecolor='black',
+                           linewidth=0.6, zorder=5)
+    ax.set_title(title, fontsize=13)
+    ax.set_xlabel('Year', fontsize=11)
+    ax.set_ylabel('% of males circumcised', fontsize=11)
+    ax.set_xlim(1990, 2030)
+    ax.set_ylim(0, 100)
+    ax.legend(fontsize=8, loc='upper left', title='Age group')
+    ax.grid(True, alpha=0.3)
+
+
+def _bin_in(ab_str, lo, hi):
+    """Test whether an AgeBin string '[a,b)' lies within [lo, hi)."""
+    s = str(ab_str).strip('[]() ')
+    if ',' in s:
+        a, b = s.split(',')
+        return float(a) >= lo and float(b) <= hi
+    return False
 
 
 def _plot_art_panel(ax, data, yrs, phia_art, sex_key, sex_int, shades, title):
@@ -383,7 +458,7 @@ def _plot_prev_panel(ax, data, yrs, targets, prev_calib, sex_key, sex_int, shade
 
 # ── Dashboard 1: Fit vs targets ──────────────────────────────────────────────
 
-def plot_fit_dashboard(data, targets, phia_art, inc_calib, prev_calib, label, n_seeds, outdir=FIGURES_DIR):
+def plot_fit_dashboard(data, targets, phia_art, inc_calib, prev_calib, vmmc_data, label, n_seeds, outdir=FIGURES_DIR):
     fig = plt.figure(figsize=(18, 10.5))
     gs = GridSpec(2, 3, left=0.05, right=0.98, bottom=0.07, top=0.92,
                   wspace=0.30, hspace=0.38)
@@ -431,15 +506,9 @@ def plot_fit_dashboard(data, targets, phia_art, inc_calib, prev_calib, label, n_
     _plot_art_panel(ax, data, yrs, phia_art, 'm', 0, M_ART_SHADES,
                     '(E) ART coverage — Male')
 
-    # (F) VMMC placeholder
+    # (F) VMMC coverage by age
     ax = fig.add_subplot(gs[1, 2])
-    ax.text(0.5, 0.5, '(F) VMMC coverage\n(data pending)',
-            ha='center', va='center', transform=ax.transAxes,
-            fontsize=14, color='grey', style='italic')
-    ax.set_xticks([])
-    ax.set_yticks([])
-    for spine in ax.spines.values():
-        spine.set_edgecolor('lightgrey')
+    _plot_vmmc_panel(ax, data, yrs, vmmc_data, '(F) VMMC coverage by age')
 
     fig.suptitle(f'Fit dashboard — {label} (n={n_seeds} seeds, 95% CI)', fontsize=15, y=0.98)
     out_path = f'{outdir}/dashboard_fit_{label}.png'
@@ -648,7 +717,8 @@ if __name__ == '__main__':
     inc_calib = pd.read_csv(f'{CALIB_DIR}/incidence_by_sex.csv')
     prev_calib = pd.read_csv(f'{CALIB_DIR}/prevalence_by_age_sex.csv')
     condom_data = pd.read_csv(f'{DATA_DIR}/condom_use.csv')
+    vmmc_data = pd.read_csv(f'{DATA_DIR}/vmmc_coverage.csv')
 
-    plot_fit_dashboard(data, targets, phia_art, inc_calib, prev_calib,
+    plot_fit_dashboard(data, targets, phia_art, inc_calib, prev_calib, vmmc_data,
                        args.label, args.n_seeds, outdir=args.outdir)
     plot_network_dashboard(data, condom_data, args.label, args.n_seeds, outdir=args.outdir)

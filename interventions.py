@@ -65,15 +65,15 @@ def get_testing_products():
 def make_interventions():
 
     art_data = pd.read_csv('data/art_coverage.csv')
-    # n_vmmc = pd.read_csv(f'data/n_vmmc.csv').set_index('year')
+    vmmc_data = pd.read_csv('data/vmmc_coverage.csv')
     tests = get_testing_products()
     art = sti.ART(coverage=art_data)
-    # vmmc = sti.VMMC(coverage_data=n_vmmc)
+    vmmc = sti.VMMC(coverage=vmmc_data)  # prevalence-target semantics (stisim local patch)
     prep = sti.Prep()
 
     interventions = tests + [
         art,
-        # vmmc,
+        vmmc,
         prep,
     ]
 

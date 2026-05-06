@@ -307,3 +307,77 @@ Adopt VMMC integration as the new baseline. Male incidence under-prediction is a
 The initial 005 commit had only 2007/2016/2021 data points in the CSV, which caused `sc.smoothinterp` to propagate the SDHS 2007 [35,40)=0.20 value back to the sim start (1985). Pre-2000 [35,40) MMC was therefore an unrealistic 20%.
 
 Fix: added a **1990 anchor row** to `data/vmmc_coverage.csv` with values 0.005–0.04 calibrated to SHIMS3 nonmedical-MMC rates. Pre-2007 trajectory now ramps linearly from low traditional-MC baseline up to the validated SDHS 2007 values. User confirmed SDHS 2007 measurements directly, validating the EMOD JSON for 15-49 within rounding (including the 35-39 bump).
+
+### Second follow-up: halve baseline + add CIs
+
+- Halved the 1990 baseline values (e.g. older bins 0.04 → 0.02) per user request to better match data points
+- Added Wilson 95% CI columns (lb, ub) to `data/vmmc_coverage.csv` computed from the published sample sizes in SDHS 2007 and SHIMS3 Table 12.5 (PHIA reports don't publish CIs for the age-stratified MMC table itself)
+- Added 2021 PHIA prevalence with CIs (was missing — the dashboard fallback path used lb=ub=val giving zero-width "error bars")
+- Updated `_plot_vmmc_panel` to render error bars when CIs are present
+
+---
+
+## 006 — Bellan acute HIV parameters
+
+- **Date**: 2026-05-06
+- **Branch**: master (HIVsim) / local main (stisim)
+- **Motivation**: Update acute-phase HIV transmission parameters to Bellan 2015 central estimates (smaller and more credible than the prior values).
+
+### What changed
+
+**Stisim**: cherry-picked `28adb68` (originally `a5e9ec1` on `origin/fix/396-bellan-acute-pars`) onto local main.
+- `dur_acute`: 3 months → **1.7 months** (Bellan 2015 central estimate)
+- `rel_trans_acute.loc`: 6 → **5.3** (Bellan 2015 RH)
+- Resulting Excess Hazard Months (EHM) ≈ (5.3-1)×1.7 = 7.3, vs Bellan's estimate of 8.4 and the previous model's ~15
+
+The previous overestimate was partly because earlier estimates failed to account for risk heterogeneity (per Bellan 2015).
+
+Cherry-pick had a conflict in `hiv.py` because the upstream branch was built on a newer main that introduced `beta_breastfeed` and other PMTCT changes. Resolved by keeping just the Bellan acute params change and skipping the unrelated `beta_breastfeed` (which is part of a different upstream PR not in scope here). Local ART fix and VMMC patch in `hiv_interventions.py` untouched.
+
+### Stisim provenance (cumulative)
+
+Local main now has 4 commits ahead of upstream + 2 working-tree mods:
+- `827d720` — Add age-dependent M→F susceptibility (cherry-pick)
+- `d18413e` — Rename to rel_sus_age (cherry-pick)
+- `28adb68` — Bellan acute params (cherry-pick, this experiment)
+- Uncommitted: ART allocation fix from 002, VMMC prevalence-target patch from 005
+
+### Results (10-seed dashboards)
+
+Compared to 005 final:
+
+| Metric | 005 | 006 | Δ |
+|---|---|---|---|
+| F incidence peak (~1995) | ~3.8 | ~3.5 | -8% |
+| M incidence peak (~1995) | ~2.5 | ~2.2 | -12% |
+| F incidence 2016 | ~1.2 | ~0.8 | -33% |
+| M incidence 2016 | ~0.3 | ~0.2 | -33% |
+| F incidence 2021 | ~0.7 | ~0.5 | -29% |
+| M incidence 2021 | ~0.2 | ~0.1 | -50% |
+
+Roughly 25-30% reduction in incidence across the board, consistent with the EHM drop from ~15 to ~7.3. The F:M ratio is preserved (rel_beta_f2m unchanged).
+
+Prevalence/ART/VMMC panels are largely unchanged from 005 (acute-phase change affects transmission rates but doesn't directly alter coverage targets or natural-history milestones beyond duration of acute).
+
+### Implication
+
+Both M and F incidence are now further below PHIA targets (F sim 0.8 vs target 1.7 in 2016; M sim 0.2 vs target 0.85). This is the expected and documented cost of the Bellan correction: it makes the model more biologically credible at the natural-history level, but invalidates the previous calibration of `beta_m2f` against the old (too-high) acute contribution.
+
+The right next step is **VM-based re-calibration** with the expanded free-parameter set:
+- `beta_m2f` (currently 0.01, will likely need to roughly double)
+- `eff_condom` (currently 0.85)
+- `rel_dur_on_art` (existing)
+- `prop_f0`, `prop_m0`, `m1_conc` (existing)
+- New: `condom_scale` (currently fixed 0.5; expose for tuning)
+- New: `rel_beta_f2m` (currently fixed 0.25)
+- New: `rel_sus_age` young-women multiplier (currently fixed 1.7)
+- Optional: `eff_circ`, other concurrency params
+
+### Figures (in `experiments/006_bellan/figures/`)
+
+- `dashboard_fit_006_final.png` — 10-seed fit dashboard with Bellan acute params
+- `dashboard_network_006_final.png` — 10-seed network dashboard
+
+### Decision
+
+Adopt Bellan acute params as the new baseline. Pause for VM-based re-calibration before any further structural changes.

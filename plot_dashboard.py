@@ -338,7 +338,7 @@ def band_ci(ax, x, arr, color, label=None, lw=2, ls='-', alpha_line=1.0):
 
 
 def _plot_vmmc_panel(ax, data, yrs, vmmc_data, title):
-    """Lines = sim circumcision prevalence by age bin; points = data targets aggregated to same bins."""
+    """Lines = sim circumcision prevalence by age bin; points+CI = data targets aggregated to same bins."""
     mask_yrs = (yrs >= 1990) & (yrs <= 2030)
     x = yrs[mask_yrs]
     for i, (lo, hi) in enumerate(VMMC_BINS):
@@ -346,12 +346,22 @@ def _plot_vmmc_panel(ax, data, yrs, vmmc_data, title):
         arr = data['vmmc_by_bin'][(lo, hi)][:, mask_yrs] * 100
         band_ci(ax, x, arr, color, lw=1.8, label=f'{lo}–{hi}')
 
-        # Aggregate target data 5-yr bins into this broader bin
+        # Aggregate target data 5-yr bins into this broader bin (with CIs where available)
         for sy in VMMC_SURVEY_YEARS:
             sub = vmmc_data[(vmmc_data['Year'] == sy) &
                             (vmmc_data['AgeBin'].apply(lambda ab: _bin_in(ab, lo, hi)))]
-            if len(sub):
-                avg = sub['p_vmmc'].mean() * 100
+            if not len(sub):
+                continue
+            avg = sub['p_vmmc'].mean() * 100
+            has_ci = ('lb' in sub.columns and 'ub' in sub.columns
+                      and sub[['lb', 'ub']].notna().all(axis=None))
+            if has_ci:
+                lb_avg = sub['lb'].mean() * 100
+                ub_avg = sub['ub'].mean() * 100
+                ax.errorbar(sy, avg, yerr=[[avg - lb_avg], [ub_avg - avg]],
+                            fmt='o', color=color, markersize=6, capsize=3,
+                            markeredgecolor='black', markeredgewidth=0.6, zorder=5)
+            else:
                 ax.scatter(sy, avg, color=color, s=45, edgecolor='black',
                            linewidth=0.6, zorder=5)
     ax.set_title(title, fontsize=13)
@@ -716,6 +726,9 @@ if __name__ == '__main__':
     phia_art = pd.read_csv(f'{CALIB_DIR}/art_coverage_by_age_sex.csv')
     inc_calib = pd.read_csv(f'{CALIB_DIR}/incidence_by_sex.csv')
     prev_calib = pd.read_csv(f'{CALIB_DIR}/prevalence_by_age_sex.csv')
+    # Append 2021 PHIA prevalence (held out from calibration but plotted as targets, with CIs)
+    prev_2021 = pd.read_csv(f'{CALIB_DIR}/prevalence_2021_VALIDATION_ONLY.csv')
+    prev_calib = pd.concat([prev_calib, prev_2021], ignore_index=True)
     condom_data = pd.read_csv(f'{DATA_DIR}/condom_use.csv')
     vmmc_data = pd.read_csv(f'{DATA_DIR}/vmmc_coverage.csv')
 

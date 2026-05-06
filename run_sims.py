@@ -65,7 +65,7 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
         rel_sus_age=[(15, 25, 'f', 1.7), (25, 50, 'f', 1.0), (15, 50, 'm', 1.0)],
         eff_condom=0.85,
         init_prev_data=pd.read_csv('data/init_prev_hiv.csv'),
-        rel_init_prev=.1,
+        rel_init_prev=.2,  # was 0.1; doubled in experiment 007 to seed ~22 cases instead of ~11
     )
     if hiv_pars:
         hiv_kwargs.update(hiv_pars)

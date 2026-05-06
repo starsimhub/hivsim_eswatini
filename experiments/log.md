@@ -381,3 +381,40 @@ The right next step is **VM-based re-calibration** with the expanded free-parame
 ### Decision
 
 Adopt Bellan acute params as the new baseline. Pause for VM-based re-calibration before any further structural changes.
+
+---
+
+## 007 — Double rel_init_prev (0.1 → 0.2)
+
+- **Date**: 2026-05-06
+- **Branch**: master
+
+### Motivation
+
+Diagnosed that the previous `rel_init_prev=0.1` produced only ~11 seeded HIV cases at sim init (1985), out of ~4,440 active adults. Most strata had expected count <1, so realized prev was extremely noisy across seeds (Bernoulli draws of 0/1/2/3). Verified by snapshotting `hiv.infected` at ti=0: 8 of 11 seeds landed in FSW/client strata (correct biological pattern, but high run-to-run variance for early-epidemic dynamics).
+
+Doubling `rel_init_prev` to 0.2 yields ~20 seeded cases (verified with 5 seeds: mean 20.2, std 4.8). More robust early-epidemic dynamics without making strong claims about pre-1985 prevalence.
+
+### What changed
+
+`run_sims.py`: `rel_init_prev=0.1` → `rel_init_prev=0.2`.
+
+### Results
+
+- **Early-epidemic CI bands tighter** in 1990-1995 panels A (visible narrowing) — expected: more seeds = less between-seed variance
+- **Peak incidence similar**: ~3.5-4 F, ~2-2.5 M in 1995 — the network-driven peak is dominated by transmission dynamics, not seed count
+- **Late-epidemic (2016/2021) unchanged**: by then the model has been running for 30+ years; initial seed count is irrelevant
+- **Prevalence by age & sex, ART, VMMC panels**: unchanged
+
+### Implication
+
+`rel_init_prev` mainly controls early-epidemic certainty, not late-epidemic levels. For the upcoming VM re-calibration, exposing this as a free parameter would let Optuna fit the early-epidemic ramp (1985-1995). Default range to consider: 0.05 – 1.0.
+
+### Figures (in `experiments/007_rel_init_prev/figures/`)
+
+- `dashboard_fit_007_final.png` — 10-seed fit dashboard with rel_init_prev=0.2
+- `dashboard_network_007_final.png` — 10-seed network dashboard (unchanged from 006)
+
+### Decision
+
+Adopt `rel_init_prev=0.2` as the new baseline before re-calibration. Cheap improvement to early-epidemic stability.

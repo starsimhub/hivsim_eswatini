@@ -1,0 +1,29 @@
+[project]
+name = "hivsim-eswatini"
+version = "0.1.0"
+description = "HIV calibration project for Eswatini, built on Starsim/STIsim"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "starsim",
+    "stisim",
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "seaborn",
+    "scipy",
+    "sciris",
+    "optuna",
+    "openpyxl",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel",
+    "jupyter",
+    "ruff",
+]
+
+[tool.uv.sources]
+starsim = { path = "../../star_sim/starsim", editable = true }
+stisim = { path = "../../star_sim/stisim", editable = true }

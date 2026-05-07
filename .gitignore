@@ -9,3 +9,11 @@ __pycache__/
 # figures/ is scratch — keepers go in experiments/NNN_topic/figures/
 figures/*
 !figures/README.md
+
+# uv / venv
+.venv/
+.python-version
+*.egg-info/
+
+# Calibration experiment outputs (large, ephemeral; regenerate from code + frozen targets)
+experiments/*/outputs/

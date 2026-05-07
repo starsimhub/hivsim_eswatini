@@ -15,6 +15,7 @@ dependencies = [
     "sciris",
     "optuna",
     "openpyxl",
+    "pyarrow",
 ]
 
 [dependency-groups]

@@ -18,6 +18,7 @@ os.environ.update(
     MKL_NUM_THREADS='1',
 )
 
+from pathlib import Path
 import numpy as np
 import sciris as sc
 import stisim as sti
@@ -25,7 +26,7 @@ import pandas as pd
 from run_sims import make_sim
 
 LOCATION = 'eswatini'
-RESULTS_DIR = 'results'
+RESULTS_DIR = Path(__file__).parent / 'results'
 
 # Percentiles for summary statistics
 percentile_pairs = [[.01, .99], [.1, .9], [.25, .75]]
@@ -39,9 +40,19 @@ def check_hiv_alive(sim):
 
 
 def run_msim(n_pars=200, start=1985, stop=2026):
-    """
-    Run top n_pars calibrated parameter sets.
-    No seed variation — each par set is a genuinely distinct fit.
+    """ Run the top ``n_pars`` calibrated parameter sets.
+
+    No seed variation — each par set is treated as a genuinely distinct fit
+    from calibration, so the resulting bands reflect parameter (not stochastic)
+    uncertainty.
+
+    Args:
+        n_pars (int):  Number of top parameter sets to run.
+        start (int|float):  Simulation start year.
+        stop (int|float):  Simulation stop year.
+
+    Returns:
+        list: Completed ``sti.Sim`` objects, one per parameter set kept by ``check_hiv_alive``.
     """
     pars_df = sc.loadobj(f'{RESULTS_DIR}/{LOCATION}_pars.df')
     base = make_sim(start=start, stop=stop, verbose=-1)
@@ -76,16 +87,31 @@ def prune_columns(df):
 
 
 def sim_to_df(sim):
-    """Convert a single sim to a pruned dataframe with par_idx."""
+    """ Convert a single sim to an annualized DataFrame tagged with its parameter index.
+
+    Args:
+        sim (sti.Sim):  A completed simulation with ``sim.par_idx`` set.
+
+    Returns:
+        pd.DataFrame: Annualized results with an added ``par_idx`` column.
+    """
     df = sim.to_df(resample='year', use_years=True, sep='.')
     df['par_idx'] = sim.par_idx
     return df
 
 
 def save_results(sims):
-    """
-    Generate percentile statistics and save.
-    Parallelizes to_df() across sims, then prunes and aggregates.
+    """ Generate percentile statistics across sims and save the result.
+
+    Parallelizes ``to_df()`` across sims, then concatenates, prunes columns,
+    and groups by year to compute summary percentiles. Writes to
+    ``{RESULTS_DIR}/{LOCATION}_calib_stats.df``.
+
+    Args:
+        sims (list):  Completed sims from ``run_msim()``.
+
+    Returns:
+        pd.DataFrame: The percentile-summary DataFrame (also saved to disk).
     """
     print(f'Generating results from {len(sims)} sims...')
 

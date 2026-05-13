@@ -3,6 +3,7 @@ Run HIV Eswatini model
 """
 
 # %% Imports and settings
+from pathlib import Path
 import numpy as np
 import sciris as sc
 import pandas as pd
@@ -13,14 +14,38 @@ import stisim as sti
 from interventions import make_interventions
 from analyzers import hiv_epi
 
-# Constants
+# Constants — paths anchored to the repo root so scripts work regardless of CWD.
 LOCATION = 'eswatini'
-DATA_DIR = 'data'
-RESULTS_DIR = 'results'
-FIGURES_DIR = 'figures'
+REPO_DIR = Path(__file__).parent
+DATA_DIR = REPO_DIR / 'data'
+RESULTS_DIR = REPO_DIR / 'results'
+FIGURES_DIR = REPO_DIR / 'figures'
 
 
 def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None):
+    """ Build the central Eswatini HIV simulation.
+
+    Constructs the structured sexual network, the HIV disease module, default
+    interventions (testing, ART, PrEP), and the ``hiv_epi`` analyzer. Additional
+    analyzers can be appended via ``analyzers``. Many model assumptions (network
+    proportions, beta, condom efficacy) are intentionally hardcoded here and are
+    only swapped out by the calibrator.
+
+    Args:
+        seed (int):  Random seed (``rand_seed``) for the sim.
+        start (int|float):  Sim start year.
+        stop (int|float):  Sim stop year.
+        verbose (float|int):  Verbosity passed to ``sti.Sim``; ``-1`` suppresses output.
+        analyzers (list|None):  Extra analyzers to append to the default ``[hiv_epi()]``.
+
+    Returns:
+        sti.Sim: An uninitialized sim ready to ``.run()``.
+
+    **Example**:
+
+        sim = make_sim(seed=1, stop=2026)
+        sim.run()
+    """
 
     # Network
     sexual = sti.StructuredSexual(
@@ -33,7 +58,7 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None):
         m1_conc=0.15,
         m2_conc=0.5,
         p_pair_form=0.5,
-        condom_data=pd.read_csv(f'data/condom_use.csv'),
+        condom_data=pd.read_csv(DATA_DIR / 'condom_use.csv'),
         fsw_shares=ss.bernoulli(p=0.10),
         client_shares=ss.bernoulli(p=0.20),
     )
@@ -44,7 +69,7 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None):
     hiv = sti.HIV(
         beta_m2f=0.01,
         eff_condom=0.85,
-        init_prev_data=pd.read_csv('data/init_prev_hiv.csv'),
+        init_prev_data=pd.read_csv(DATA_DIR / 'init_prev_hiv.csv'),
         rel_init_prev=.1,
     )
 
@@ -58,13 +83,13 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None):
     analyzers = default_analyzers
 
     simpars = dict(
-        use_migration=True, rand_seed=seed, n_agents=10e3, start=start, stop=stop, verbose=verbose,
+        use_migration=True, rand_seed=seed, n_agents=int(10e3), start=start, stop=stop, verbose=verbose,
     )
-    hiv_data = pd.read_csv(f'{DATA_DIR}/eswatini_hiv_calib.csv')
+    hiv_data = pd.read_csv(DATA_DIR / 'eswatini_hiv_calib.csv')
 
     sim = sti.Sim(
         pars=simpars,
-        datafolder='data/',
+        datafolder=str(DATA_DIR) + '/',
         demographics=LOCATION.lower(),
         diseases=[hiv],
         networks=networks,
@@ -86,4 +111,4 @@ if __name__ == '__main__':
     sim.plot('hiv', annualize=True)
 
     df = sim.to_df(resample='year', use_years=True, sep='.')
-    sc.saveobj(f'results/{LOCATION}_sim.df', df)
+    sc.saveobj(RESULTS_DIR / f'{LOCATION}_sim.df', df)

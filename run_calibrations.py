@@ -12,6 +12,7 @@ os.environ.update(
 )
 
 # %% Imports and settings
+from pathlib import Path
 import numpy as np
 import sciris as sc
 import stisim as sti
@@ -19,11 +20,12 @@ import pandas as pd
 from run_sims import make_sim
 
 
-# Constants
+# Constants — paths anchored to the repo root.
 LOCATION = 'eswatini'
-DATA_DIR = 'data'
-RESULTS_DIR = 'results'
-FIGURES_DIR = 'figures'
+REPO_DIR = Path(__file__).parent
+DATA_DIR = REPO_DIR / 'data'
+RESULTS_DIR = REPO_DIR / 'results'
+FIGURES_DIR = REPO_DIR / 'figures'
 
 
 # Run settings
@@ -33,7 +35,15 @@ do_shrink = True  # Whether to shrink the calibration results
 
 
 def make_calibration():
+    """ Build the Optuna-backed calibration object for the Eswatini HIV model.
 
+    Defines the calibration parameter ranges (HIV transmission, condom efficacy,
+    ART duration, and network composition), the data source, and the Calibration
+    runner. Does not start trials — call ``calib.calibrate()`` on the return value.
+
+    Returns:
+        tuple: ``(sim, calib)`` — the base sim and an unstarted ``sti.Calibration``.
+    """
     # Define the calibration parameters
     ckw = dict(suggest_type='suggest_float')
     calib_pars = dict(
@@ -55,7 +65,7 @@ def make_calibration():
     sres = ['hiv.n_on_art', 'n_alive']
 
     sim = make_sim(verbose=-1, seed=1)
-    data = pd.read_csv(f'data/{LOCATION}_hiv_calib.csv')
+    data = pd.read_csv(DATA_DIR / f'{LOCATION}_hiv_calib.csv')
 
     weights = {
     }
@@ -85,10 +95,10 @@ if __name__ == '__main__':
         calib.calibrate()
         print(f'Best pars are {calib.best_pars}')
         calib.remove_db()
-        calib.save(f'{RESULTS_DIR}/{LOCATION}_calib.obj', shrink=do_shrink,
-                   pars_filename=f'{RESULTS_DIR}/{LOCATION}_pars.df')
+        calib.save(str(RESULTS_DIR / f'{LOCATION}_calib.obj'), shrink=do_shrink,
+                   pars_filename=str(RESULTS_DIR / f'{LOCATION}_pars.df'))
     else:
-        calib = sc.loadobj(f'{RESULTS_DIR}/{LOCATION}_calib.obj')
+        calib = sc.loadobj(RESULTS_DIR / f'{LOCATION}_calib.obj')
 
     print('Done!')
 

@@ -10,7 +10,73 @@ import sciris as sc
 
 
 def set_font(size=None):
+    """ Set the global matplotlib font size via sciris.
+
+    Args:
+        size (int|None):  Font size in points. None reverts to sciris default.
+    """
     sc.options(fontsize=size)
+
+
+# ── Multi-seed simulation helpers (shared by plot_calibration.py and plot_incidence.py) ──
+
+def run_one(seed, columns=None):
+    """ Run a single sim at the given seed and return its annual results DataFrame.
+
+    Args:
+        seed (int):  Random seed for the simulation.
+        columns (list|None):  Optional list of column names to retain. If None, all are returned.
+
+    Returns:
+        pd.DataFrame: Annualized results from ``sim.to_df(resample='year', use_years=True, sep='.')``.
+
+    **Example**:
+
+        df = run_one(seed=1, columns=['timevec', 'hiv.prevalence_15_49'])
+    """
+    from run_sims import make_sim  # avoid circular import at module load
+    sim = make_sim(seed=seed, verbose=-1)
+    sim.run()
+    df = sim.to_df(resample='year', use_years=True, sep='.')
+    if columns is not None:
+        df = df[[c for c in columns if c in df.columns]]
+    return df
+
+
+def stack(dfs, col, years):
+    """ Stack one column across many sim DataFrames into a 2D array (n_sims x n_years).
+
+    Missing columns are filled with NaN so callers can request analyzer-derived columns
+    that may not exist in every sim.
+
+    Args:
+        dfs (list[pd.DataFrame]):  Output of multiple ``run_one()`` calls.
+        col (str):  Column name to extract from each DataFrame.
+        years (np.ndarray):  Reference year vector (used only for the NaN fill length).
+
+    Returns:
+        np.ndarray: Shape ``(len(dfs), len(years))``.
+    """
+    return np.array([
+        df[col].values if col in df.columns else np.full(len(years), np.nan)
+        for df in dfs
+    ])
+
+
+def summarize(arr):
+    """ Compute median and 10th/90th-percentile bands across the seed axis.
+
+    Args:
+        arr (np.ndarray):  Shape ``(n_seeds, n_years)``.
+
+    Returns:
+        dict: Keys ``'median'``, ``'lo'``, ``'hi'`` (each a 1-D array of length ``n_years``).
+    """
+    return {
+        'median': np.nanmedian(arr, axis=0),
+        'lo':     np.nanpercentile(arr, 10, axis=0),
+        'hi':     np.nanpercentile(arr, 90, axis=0),
+    }
 
 
 def parse_unaids_value(s):

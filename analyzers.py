@@ -147,23 +147,31 @@ class NetworkSnapshot(ss.Analyzer):
             debut_data[sex_label] = np.array(nw.debut[mask])
         self.debut_data = debut_data
 
-        # Female partnership status by age
+        # Female partnership status by 1-year age bin (15..50), vectorized via np.bincount.
         age_bins = np.arange(15, 51)
-        pba = dict(age_bins=age_bins, prop_stable=[], prop_casual=[])
-        for age in age_bins:
-            in_age = ppl.female & ppl.alive & (ppl.age >= age) & (ppl.age < age + 1)
-            n_total = int(in_age.count())
-            if n_total > 0:
-                n_stable = int((in_age & (nw.stable_partners >= 1)).count())
-                n_casual = int((in_age & (nw.casual_partners >= 1)).count())
-                pba['prop_stable'].append(n_stable / n_total)
-                pba['prop_casual'].append(n_casual / n_total)
-            else:
-                pba['prop_stable'].append(np.nan)
-                pba['prop_casual'].append(np.nan)
-        pba['prop_stable'] = np.array(pba['prop_stable'])
-        pba['prop_casual'] = np.array(pba['prop_casual'])
-        self.partnership_by_age = pba
+        female_alive = ppl.female & ppl.alive
+        ages_f = np.asarray(ppl.age[female_alive]).astype(int)
+        has_stable = np.asarray(nw.stable_partners[female_alive] >= 1)
+        has_casual = np.asarray(nw.casual_partners[female_alive] >= 1)
+
+        n_bins = len(age_bins)
+        idx = ages_f - age_bins[0]
+        in_range = (idx >= 0) & (idx < n_bins)
+        idx = idx[in_range]
+
+        totals  = np.bincount(idx, minlength=n_bins)
+        stables = np.bincount(idx, weights=has_stable[in_range].astype(float), minlength=n_bins)
+        casuals = np.bincount(idx, weights=has_casual[in_range].astype(float), minlength=n_bins)
+
+        with np.errstate(invalid='ignore', divide='ignore'):
+            prop_stable = np.where(totals > 0, stables / totals, np.nan)
+            prop_casual = np.where(totals > 0, casuals / totals, np.nan)
+
+        self.partnership_by_age = dict(
+            age_bins=age_bins,
+            prop_stable=prop_stable,
+            prop_casual=prop_casual,
+        )
 
     def finalize(self):
         super().finalize()

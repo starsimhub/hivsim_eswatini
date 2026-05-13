@@ -63,20 +63,19 @@ def get_testing_products():
 
 
 def make_interventions():
+    """ Build the full HIV intervention package for the Eswatini sim.
 
-    art_data = pd.read_csv('data/art_coverage.csv')
-    # n_vmmc = pd.read_csv(f'data/n_vmmc.csv').set_index('year')
+    Combines three HIV testing strategies (FSW-targeted, general population, low-CD4),
+    ART rollout informed by national coverage data, and PrEP.
+
+    Returns:
+        list: Intervention objects ready to pass to ``sti.Sim(interventions=...)``.
+    """
+    from pathlib import Path
+    art_data = pd.read_csv(Path(__file__).parent / 'data' / 'art_coverage.csv')
     tests = get_testing_products()
     art = sti.ART(coverage=art_data)
-    # vmmc = sti.VMMC(coverage_data=n_vmmc)
     prep = sti.Prep()
-
-    interventions = tests + [
-        art,
-        # vmmc,
-        prep,
-    ]
-
-    return interventions
+    return tests + [art, prep]
 
 

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hivsim-eswatini"
+version = "0.1.0"
+description = "Agent-based HIV model for Eswatini, built on Starsim and STIsim."
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Cliff Kerr", email = "cliff.kerr@gatesfoundation.org"},
+]
+dependencies = [
+    # Versions pinned to the environment used to produce the published calibration figures.
+    # Use >= to allow forward-compatible patch/minor updates; bump these when re-validating.
+    "numpy>=2.3.5",
+    "pandas>=2.3.3",
+    "sciris>=3.2.9",
+    "matplotlib>=3.10.6",
+    "starsim>=3.3.4",
+    "stisim>=1.5.4",
+    "openpyxl>=3.1",  # required by pandas.read_excel for the UNAIDS/PHIA .xlsx files
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+]
+
+[project.urls]
+Repository = "https://github.com/starsimhub/hivsim_eswatini"
+
+[tool.setuptools]
+# This project is a research codebase, not an installable package; expose nothing.
+py-modules = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

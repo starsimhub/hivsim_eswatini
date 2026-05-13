@@ -2,6 +2,7 @@
 Run sims and extract network structure data for the network figure.
 """
 
+from pathlib import Path
 import sciris as sc
 import numpy as np
 import starsim as ss
@@ -9,11 +10,18 @@ import stisim as sti
 from run_sims import make_sim
 from analyzers import NetworkSnapshot
 
-RESULTS_DIR = 'results'
+RESULTS_DIR = Path(__file__).parent / 'results'
 
 
 def run_network_sims(n_sims=3):
-    """Run sims with network analyzers."""
+    """ Run ``n_sims`` sims with the network-snapshot and partner-age analyzers attached.
+
+    Args:
+        n_sims (int):  Number of seeds to run in parallel.
+
+    Returns:
+        list: Completed sims (``sti.Sim`` objects).
+    """
     sims = sc.autolist()
     for seed in range(1, n_sims + 1):
         network_analyzers = [
@@ -28,7 +36,19 @@ def run_network_sims(n_sims=3):
 
 
 def extract_network_data(sims):
-    """Extract network data from completed sims and save."""
+    """ Extract network structure from completed sims and persist to disk.
+
+    Aggregates lifetime-partner counts and age-difference distributions across all sims,
+    takes the first sim for one-shot snapshots (risk group, debut, relationship duration),
+    and averages the partnership-by-age curves across sims. Saves to
+    ``{RESULTS_DIR}/network_data.obj``.
+
+    Args:
+        sims (list):  Completed sims from ``run_network_sims()``.
+
+    Returns:
+        sc.objdict: The aggregated network data object (also saved to disk).
+    """
     data = sc.objdict()
 
     # Lifetime partner distributions (aggregate across sims)

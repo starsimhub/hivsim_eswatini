@@ -1,0 +1,48 @@
+# Experiment 011 — network age-mixing fix
+# Configuration for the algorithm comparison (run_pr477_comparison.py).
+# This is a model-development / debugging experiment, not a calibration run.
+
+experiment: 011_network_age_mixing
+question: >
+  Does age_diff_pars actually drive the realized partner-age distribution,
+  and which match_pairs implementation transmits the configured gap?
+
+diagnostic:
+  n_agents: 10000
+  dur_years: 25
+  seeds: 5
+  # mean partner-age-gap sweep applied uniformly across all
+  # (woman_age x risk_level) cells of age_diff_pars
+  mu_sweep:
+    A_zeros: 0
+    B_defaults: 7
+    C_doubled: 14
+
+variants:
+  baseline_no_fix:      # stisim 1.5.5 as released (rank-based match_pairs)
+    stisim_ref: main@1.5.5
+  E_gaussian_patch:     # local +21-line patch on networks.py (REJECTED)
+    stisim_ref: main@1.5.5 + local networks.py patch
+  A_pr477_md1:          # PR #477 (linear_sum_assignment), max_deviation=1
+    stisim_ref: origin/459 (PR #477)
+    max_deviation: 1
+  B_pr477_md3:
+    stisim_ref: origin/459 (PR #477)
+    max_deviation: 3
+  C_pr477_md5:
+    stisim_ref: origin/459 (PR #477)
+    max_deviation: 5
+  D_pr477_dhs:          # PR #477 + age_diff_pars set from DHS Eswatini 2006-07
+    stisim_ref: origin/459 (PR #477)
+    max_deviation: 1
+    age_diff_pars_source: outputs/dhs_partner_age_summary.csv
+
+decision:
+  adopt: A_pr477_md1   # PR #477, default max_deviation
+  reject: E_gaussian_patch
+  age_diff_pars: from_dhs   # carry D's DHS-derived values forward to 012
+
+environment:
+  stisim: 1.5.5 (2026-05-15)
+  starsim: 3.3.3
+  python: "3.14"

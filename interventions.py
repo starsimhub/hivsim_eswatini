@@ -62,10 +62,19 @@ def get_testing_products():
     return tests
 
 
+def _normalize_age_bin_format(df):
+    # Convert "[15,25)" / "[15:25)" interval notation to "15-25" (the format
+    # expected by upstream stisim's ss.parse_age_range as of v1.5.5).
+    if 'AgeBin' in df.columns:
+        df = df.copy()
+        df['AgeBin'] = df['AgeBin'].astype(str).str.replace(r'^\[(\d+)[,:](\d+)\)$', r'\1-\2', regex=True)
+    return df
+
+
 def make_interventions():
 
-    art_data = pd.read_csv('data/art_coverage.csv')
-    vmmc_data = pd.read_csv('data/vmmc_coverage.csv')
+    art_data = _normalize_age_bin_format(pd.read_csv('data/art_coverage.csv'))
+    vmmc_data = _normalize_age_bin_format(pd.read_csv('data/vmmc_coverage.csv'))
     tests = get_testing_products()
     art = sti.ART(coverage=art_data)
     vmmc = sti.VMMC(coverage=vmmc_data)  # prevalence-target semantics (stisim local patch)

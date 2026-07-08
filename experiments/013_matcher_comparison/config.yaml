@@ -1,0 +1,37 @@
+# Experiment 013 — matcher comparison
+# Same model, same params, same seeds; only network match_method varies.
+# Decomposes the network-driven HIV prevalence shift into age-structure vs
+# partnership-volume mechanisms.
+
+experiment: 013_matcher_comparison
+question: >
+  How much of the network-fix HIV prevalence shift is due to the corrected
+  age gap (structure) vs fewer partnerships formed (volume)?
+
+environment:
+  starsim: 3.5.0
+  stisim: 1.5.8
+  python: "3.14"
+
+model:
+  builder: run_sims.make_sim   # unchanged; only network_pars.match_method overridden
+  n_agents: 10000
+  start: 1985
+  stop: 2031
+  n_seeds: 10
+
+matchers:                      # passed via network_pars={'match_method': ...}
+  sort_bisect: old default (pre-1.5.6); zip-by-rank, age gap ~0, high volume
+  kdtree_nn: strict + untapered; correct gap, medium volume
+  closest_age_tapered_seeking: new default (1.5.6+); correct gap, low volume (taper + max_deviation skip + extreme-gap trim)
+
+metrics:
+  - prevalence_15_49 trajectory
+  - new_infections_15_49 trajectory
+  - active MF edges over time (partnership volume)
+  - mean / total lifetime partners
+  - realized male-female age gap by female age group (2020 snapshot)
+
+snapshot_year: 2020
+age_gap_bins: [[15, 24], [25, 34], [35, 49]]
+dhs_reference_gaps: {15-24: 8.6, 25-34: 7.4, 35-49: 7.7}

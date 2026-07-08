@@ -17,3 +17,6 @@ figures/*
 
 # Calibration experiment outputs (large, ephemeral; regenerate from code + frozen targets)
 experiments/*/outputs/
+
+# Reference material: source PDFs + DHS microdata (large; license-restricted; kept local)
+references/

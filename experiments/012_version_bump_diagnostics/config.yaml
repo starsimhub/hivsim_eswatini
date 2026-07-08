@@ -1,0 +1,30 @@
+# Experiment 012 — version-bump diagnostics
+# Re-baseline of the model on the updated dependency stack. No parameter
+# changes: this characterises DEFAULT new-stack behavior via make_sim().
+
+experiment: 012_version_bump_diagnostics
+question: >
+  On starsim 3.5.0 / stisim 1.5.8, does the model run end-to-end and how
+  dramatically does behavior change vs the 009-era baseline (prevalence,
+  incidence, deaths, partner-age structure)?
+
+environment:
+  starsim: 3.5.0
+  stisim: 1.5.8
+  python: "3.14"
+  harness_commit: 4bce62a   # 1.5.5 API migration; unchanged for this run
+
+model:
+  builder: run_sims.make_sim   # default parameters, no overrides
+  n_agents: 10000
+  start: 1985
+  stop: 2031
+  n_seeds: 10
+  network_matcher: closest_age_tapered_seeking   # stisim 1.5.6+ default (#477)
+
+diagnostics:
+  fit_dashboard: figures/dashboard_fit_012_new_stack.png
+  network_dashboard: figures/dashboard_network_012_new_stack.png
+  reused_from: plot_dashboard.py   # run_sims / collect / plot_* functions
+
+baseline_for_comparison: ../009_coverage_check/SUMMARY.md

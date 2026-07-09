@@ -44,6 +44,10 @@ AGE_GAP_BINS = [(15, 24), (25, 34), (35, 49)]
 DHS_GAP = {(15, 24): 8.6, (25, 34): 7.4, (35, 49): 7.7}
 SNAP_YEAR = 2020
 
+# 5-yr bins for the age-mixing matrix (edges of the 7 bins: 15,20,...,50)
+MIX_EDGES = np.arange(15, 51, 5)
+MIX_LABELS = [f"{lo}-{lo + 4}" for lo in MIX_EDGES[:-1]]  # 15-19 ... 45-49
+
 
 class EdgeCount(ss.Analyzer):
     """Record the number of active edges in the MF/SW network each step."""
@@ -92,12 +96,18 @@ def run_one(matcher, seed):
 
     gaps = {}
     n_active = 0
+    mix = np.zeros((len(MIX_LABELS), len(MIX_LABELS)))  # rows=female bin, cols=male bin
     if snap.f_ages is not None:
         n_active = int(len(snap.f_ages))
         gap = snap.m_ages - snap.f_ages
         for lo, hi in AGE_GAP_BINS:
             m = (snap.f_ages >= lo) & (snap.f_ages < hi + 1)
             gaps[f"{lo}_{hi}"] = float(np.nanmean(gap[m])) if m.any() else None
+        # Age-mixing matrix over edges with BOTH partners in 15-49
+        both = ((snap.f_ages >= 15) & (snap.f_ages < 50)
+                & (snap.m_ages >= 15) & (snap.m_ages < 50))
+        mix, _, _ = np.histogram2d(snap.f_ages[both], snap.m_ages[both],
+                                   bins=[MIX_EDGES, MIX_EDGES])
 
     return dict(
         matcher=matcher, seed=int(seed),
@@ -110,6 +120,7 @@ def run_one(matcher, seed):
         total_pairs_f=float(lpF.sum()),
         n_active_pairs_2020=n_active,
         age_gaps=gaps,
+        mix_matrix=mix.tolist(),
     )
 
 
@@ -206,6 +217,58 @@ def plot():
     print("\nSaved", OUT / "summary_table.csv")
 
 
+def plot_mixing():
+    """Side-by-side female-age x male-age edge-count heatmaps, one per matcher,
+    with row (female) and column (male) marginal totals. Counts are mean active
+    MF edges per seed at the 2020 snapshot, 5-yr bins over 15-49."""
+    rows = load()
+    n = len(MIX_LABELS)
+    mats = {}
+    for matcher in MATCHERS:
+        rs = [r for r in rows if r["matcher"] == matcher and r.get("mix_matrix")]
+        if rs:
+            mats[matcher] = np.mean([np.array(r["mix_matrix"]) for r in rs], axis=0)
+    if not mats:
+        print("No mix_matrix data in jsonl; skipping heatmap.")
+        return
+    vmax = max(m.max() for m in mats.values())
+
+    fig, axes = plt.subplots(1, len(mats), figsize=(6.2 * len(mats), 5.6))
+    if len(mats) == 1:
+        axes = [axes]
+    for ax, matcher in zip(axes, [m for m in MATCHERS if m in mats]):
+        M = mats[matcher]
+        im = ax.imshow(M, origin="lower", cmap="viridis", vmin=0, vmax=vmax, aspect="equal")
+        row_tot = M.sum(axis=1)  # total women per female bin
+        col_tot = M.sum(axis=0)  # total men per male bin
+        for i in range(n):
+            for j in range(n):
+                if M[i, j] >= 0.5:
+                    ax.text(j, i, f"{M[i, j]:.0f}", ha="center", va="center",
+                            fontsize=8, color="white" if M[i, j] < 0.55 * vmax else "black")
+        # marginal totals along the edges
+        for i in range(n):
+            ax.text(n - 0.3, i, f"{row_tot[i]:.0f}", ha="left", va="center",
+                    fontsize=8, fontweight="bold", color="#333333")
+        for j in range(n):
+            ax.text(j, n - 0.3, f"{col_tot[j]:.0f}", ha="center", va="bottom",
+                    fontsize=8, fontweight="bold", color="#333333")
+        ax.plot([-.5, n - .5], [-.5, n - .5], "w--", lw=1, alpha=0.6)
+        ax.set_xticks(range(n)); ax.set_xticklabels(MIX_LABELS, rotation=45, fontsize=8)
+        ax.set_yticks(range(n)); ax.set_yticklabels(MIX_LABELS, fontsize=8)
+        ax.set_xlabel("Male partner age (Σ men in bold)")
+        ax.set_ylabel("Female age (Σ women in bold)")
+        ax.set_title(matcher, fontsize=11)
+        ax.set_xlim(-0.5, n + 0.3)
+        ax.set_ylim(-0.5, n + 0.3)
+    fig.colorbar(im, ax=axes, label="Mean active MF edges per seed (2020)", shrink=0.75)
+    fig.suptitle("Exp 013 — age-mixing matrix by matcher (15-49, 5-yr bins, 2020 snapshot)",
+                 fontsize=13)
+    out = FIG / "age_mixing_heatmap.png"
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    print("Saved", out)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_seeds", type=int, default=10)
@@ -214,3 +277,4 @@ if __name__ == "__main__":
     if not args.plot_only:
         run_all(args.n_seeds)
     plot()
+    plot_mixing()

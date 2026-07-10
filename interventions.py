@@ -71,13 +71,19 @@ def _normalize_age_bin_format(df):
     return df
 
 
-def make_interventions():
+def make_interventions(vmmc_class=None):
+    # vmmc_class lets callers swap the VMMC implementation (default: upstream
+    # sti.VMMC). Used by exp 015 to compare upstream against the in-repo
+    # prevalence-target subclass. NB: the original exp-005 prevalence-target
+    # fix was a local patch to stisim's VMMC that the 1.5.6 rewrite overwrote;
+    # the replacement must live in this repo, not the editable stisim checkout.
+    vmmc_class = vmmc_class or sti.VMMC
 
     art_data = _normalize_age_bin_format(pd.read_csv('data/art_coverage.csv'))
     vmmc_data = _normalize_age_bin_format(pd.read_csv('data/vmmc_coverage.csv'))
     tests = get_testing_products()
     art = sti.ART(coverage=art_data)
-    vmmc = sti.VMMC(coverage=vmmc_data)  # prevalence-target semantics (stisim local patch)
+    vmmc = vmmc_class(coverage=vmmc_data)
     prep = sti.Prep()
 
     interventions = tests + [

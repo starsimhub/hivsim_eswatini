@@ -1,0 +1,34 @@
+# Experiment 015 — VMMC prevalence-target fix
+# Same model, same seeds; only the VMMC implementation varies (upstream hazard
+# vs in-repo prevalence-target subclass). Isolates the effect of the VMMC
+# coverage-semantics bug on circumcision coverage and HIV prevalence.
+
+experiment: 015_vmmc_prevalence_target
+question: >
+  Does re-implementing prevalence-target VMMC as an in-repo subclass reproduce
+  the age-differentiated SHIMS3 coverage without overshoot, and how much does the
+  VMMC bug alone move HIV prevalence?
+
+environment:
+  starsim: 3.5.0
+  stisim: 1.5.8
+  python: "3.14"
+
+model:
+  builder: run_sims.make_sim   # unchanged; only vmmc_class overridden
+  n_agents: 10000
+  start: 1985
+  stop: 2031
+  n_seeds: 10
+
+arms:
+  broken_upstream: stisim 1.5.8 sti.VMMC (per-step hazard on uncircumcised; aggregate only)
+  fixed_prevalence_target: VMMCPrevalenceTarget subclass (per-stratum stock target; tops up to p x all males in bin)
+
+vmmc_coverage_data: data/vmmc_coverage.csv   # SHIMS3/SDHS p_vmmc by 5-yr age bin, males
+snapshot_year: 2021
+
+metrics:
+  - circumcision coverage by 5-yr age bin over time (vs SHIMS3 targets)
+  - HIV prevalence 15-49 (overall, male, female) over time
+  - fit + network dashboards (fixed arm)

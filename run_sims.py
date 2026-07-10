@@ -21,7 +21,7 @@ FIGURES_DIR = 'figures'
 
 
 def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
-             hiv_pars=None, network_pars=None):
+             hiv_pars=None, network_pars=None, vmmc_class=None):
 
     # Condom data: stisim defaults x0.5 for non-marital pairings (act-level usage
     # is roughly half of DHS-reported "ever-used at last sex"). LL pairing kept
@@ -72,7 +72,7 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
     hiv = sti.HIV(**hiv_kwargs)
 
     # Interventions
-    interventions = make_interventions()
+    interventions = make_interventions(vmmc_class=vmmc_class)
 
     # Default analyzers
     default_analyzers = [hiv_epi()]

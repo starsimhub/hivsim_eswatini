@@ -225,7 +225,7 @@ def annual_last(yearvec, vals):
     return uy, np.array([vals[yi == yr][-1] for yr in uy])
 
 
-def run_sims(n_seeds):
+def run_sims(n_seeds, vmmc_class=None):
     sims = []
     for seed in range(1, n_seeds + 1):
         print(f'  seed {seed}/{n_seeds}...')
@@ -233,7 +233,7 @@ def run_sims(n_seeds):
                      VMMCPrevByAge(),
                      PartnershipSnapshot(year=NETWORK_SNAPSHOT_YEAR),
                      RiskComposition(year=RISK_SNAPSHOT_YEAR)]
-        sim = make_sim(seed=seed, verbose=-1, analyzers=analyzers)
+        sim = make_sim(seed=seed, verbose=-1, analyzers=analyzers, vmmc_class=vmmc_class)
         sim.run()
         sims.append(sim)
     return sims

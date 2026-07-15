@@ -8,6 +8,8 @@ import sciris as sc
 import starsim as ss
 import stisim as sti
 
+from vmmc import VMMCPrevalenceTarget
+
 
 
 def get_testing_products():
@@ -72,12 +74,13 @@ def _normalize_age_bin_format(df):
 
 
 def make_interventions(vmmc_class=None):
-    # vmmc_class lets callers swap the VMMC implementation (default: upstream
-    # sti.VMMC). Used by exp 015 to compare upstream against the in-repo
-    # prevalence-target subclass. NB: the original exp-005 prevalence-target
-    # fix was a local patch to stisim's VMMC that the 1.5.6 rewrite overwrote;
-    # the replacement must live in this repo, not the editable stisim checkout.
-    vmmc_class = vmmc_class or sti.VMMC
+    # Default VMMC is the in-repo VMMCPrevalenceTarget (prevalence-target
+    # semantics). Upstream sti.VMMC (stisim 1.5.6-1.5.8) applies coverage as a
+    # per-step hazard and overshoots to ~100%; the exp-005 fix that corrected
+    # this was a local patch to stisim that the 1.5.6 rewrite overwrote, so the
+    # fix now lives here (see vmmc.py, experiments/015). Pass vmmc_class=sti.VMMC
+    # to A/B against upstream. Drop this once stisim ships the upstream fix.
+    vmmc_class = vmmc_class or VMMCPrevalenceTarget
 
     art_data = _normalize_age_bin_format(pd.read_csv('data/art_coverage.csv'))
     vmmc_data = _normalize_age_bin_format(pd.read_csv('data/vmmc_coverage.csv'))

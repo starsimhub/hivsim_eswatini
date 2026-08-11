@@ -34,17 +34,44 @@ after 012 confirms the shipped matcher reproduces them (011 validated a
 
 **Prior changes vs. 009** (following 009's three suspects):
 1. Add `rel_init_prev` to the prior (currently hard-coded at 0.2). Range
-   ~0.05–0.5.
-2. Widen `rel_dur_on_art` upper bound (currently 1–20) to ~1–50, or switch
-   to log-scale.
-3. Expose one HIV-mortality / progression parameter that is currently fixed
-   at stisim defaults. Candidate to confirm during config: the CD4-decline /
-   time-to-death scale in `stisim/diseases/hiv.py`. Add a single multiplier
-   to the prior rather than freeing the whole natural-history block.
+   0.05–0.5.
+2. Widen `rel_dur_on_art` upper bound from 1–20 to **1–50**.
+3. Expose the HIV-mortality / progression block, which is currently fixed at
+   stisim defaults. Resolved after reading `stisim/diseases/hiv.py`: rather
+   than one multiplier, **two** knobs, because the module separates *how long
+   people survive untreated* from *how fast they die at a given CD4 count*,
+   and 009's diagnosis does not distinguish them:
+   - `dur_latent_mult` (0.6–1.4) scales the mean of `dur_latent`
+     (`lognorm_ex(10 y, 3 y)`) — untreated time from acute infection to
+     late-stage decline. Applied by passing a rescaled distribution through
+     `hiv_pars`; no code change needed. Anchored on median untreated survival
+     of ~9–11 y in sub-Saharan Africa.
+   - `mort_mult` (0.5–3.0) scales the CD4-binned annual death rates
+     `[0.003, 0.003, 0.005, 0.01, 0.05, 0.30]` that are hard-coded inside
+     `HIV.make_p_hiv_death()`. Requires an in-repo subclass
+     (`hiv_mortality.py`), the same pattern as `vmmc.py`, so a stisim upgrade
+     cannot wipe it. The multiplier scales the **annual rate before** the
+     `.to_prob(dt)` conversion, so a 3× draw cannot push a probability past 1.
 
+   A coverage check asks only whether the data is *reachable*, not whether
+   parameters are identifiable, so two mortality knobs is acceptable here. If
+   coverage passes, a follow-up is needed to attribute the improvement to one
+   or the other.
+
+Prior is therefore **9 parameters**: the 6 from 009 (one widened) plus 3 new.
 All other prior ranges, the target set (frozen in exp 008), and the
 observation model are **unchanged** from 009, so the coverage result is
-attributable to the network fix plus these three prior changes.
+attributable to the network fix, the VMMC fix, and these prior changes.
+
+**Structural constraint to watch.** HIV deaths in stisim apply only to
+off-ART agents (`off_art = (self.infected & ~self.on_art).uids`, `hiv.py:400`)
+— nobody on ART can die of HIV. 009's post-2010 plateau miss (sim → ~0 deaths
+vs observed ~3 k/year) can therefore only be closed via never-treated or
+ART-discontinued people. Note that widening `rel_dur_on_art` upward works
+*against* this: longer ART retention means fewer people drop into the dying
+pool. If the post-2010 plateau stays uncovered while the 1995–2005 peak is
+fixed, that is evidence for a structural gap (no non-AIDS mortality among
+PLHIV on ART) rather than a prior-narrowness problem.
 
 **Run.** Prior predictive coverage check, same machinery as 009: draw from
 the prior, simulate, compare to PHIA prevalence + UNAIDS deaths inside the

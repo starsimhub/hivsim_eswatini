@@ -21,7 +21,7 @@ FIGURES_DIR = 'figures'
 
 
 def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
-             hiv_pars=None, network_pars=None, vmmc_class=None):
+             hiv_pars=None, network_pars=None, vmmc_class=None, hiv_class=None):
 
     # Condom data: stisim defaults x0.5 for non-marital pairings (act-level usage
     # is roughly half of DHS-reported "ever-used at last sex"). LL pairing kept
@@ -69,7 +69,11 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
     )
     if hiv_pars:
         hiv_kwargs.update(hiv_pars)
-    hiv = sti.HIV(**hiv_kwargs)
+    # hiv_class lets an experiment swap in an HIV subclass (e.g.
+    # hiv_mortality.HIVMortalityMultiplier, which exposes the CD4 death rates as
+    # a calibration parameter). Defaults to upstream, so the model is unchanged
+    # unless a caller opts in — mirrors the vmmc_class injection point.
+    hiv = (hiv_class or sti.HIV)(**hiv_kwargs)
 
     # Interventions
     interventions = make_interventions(vmmc_class=vmmc_class)

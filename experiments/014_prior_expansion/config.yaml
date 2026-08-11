@@ -1,0 +1,85 @@
+# Experiment 014 — Diagnostic prior expansion on the corrected stack.
+# Re-runs 009's prior predictive coverage check with the network fix (011/013)
+# and the VMMC prevalence-target fix (015) in place, and with 009's three
+# fixed-parameter suspects opened into the prior.
+#
+# Targets, observation model and envelope definition are IDENTICAL to 009, so
+# the headline number (30/89 = 34% inside the 5-95% envelope) is directly
+# comparable.
+
+experiment: 014_prior_expansion
+question: >
+  With the network and VMMC fixes in place and the three suspect parameters
+  opened into the prior, does the coverage check pass — or does the
+  deaths/prevalence miss persist and point to structural work on HIV mortality?
+
+environment:
+  starsim: 3.5.0        # d5380b1b
+  stisim: 1.5.8         # 6755429
+  python: "3.14"        # local; raccoon runs uv-managed 3.12
+
+model:
+  builder: run_sims.make_sim
+  hiv_class: hiv_mortality.HIVMortalityMultiplier   # exposes mort_mult
+  vmmc: repo default (vmmc.VMMCPrevalenceTarget, adopted in 66b0fa4)
+  n_agents: 10000
+  start: 1985
+  stop: 2026            # no need to project past the target horizon
+  n_draws: 50
+  n_replicates: 1       # coverage is a binary reachability question
+  draw_seed: 20260811
+
+# 9 parameters: 6 from 009 (rel_dur_on_art widened) + 3 new.
+# Uniform draws; `source: 009` means the range is unchanged from experiment 009.
+prior:
+  hiv.beta_m2f:          {low: 0.002, high: 0.014, source: 009}
+  hiv.eff_condom:        {low: 0.5,   high: 0.9,   source: 009}
+  structuredsexual.prop_f0: {low: 0.55, high: 0.9, source: 009}
+  structuredsexual.prop_m0: {low: 0.55, high: 0.8, source: 009}
+  structuredsexual.m1_conc: {low: 0.05, high: 0.3, source: 009}
+
+  hiv.rel_dur_on_art:    {low: 1.0,  high: 50.0,
+                          was: "1-20 in 009",
+                          rationale: "suspect 2 — modern ART roughly normalises
+                                      life expectancy, so the 009 ceiling may
+                                      have been binding"}
+
+  hiv.rel_init_prev:     {low: 0.05, high: 0.5,
+                          was: "fixed at 0.2 in run_sims.py",
+                          rationale: "suspect 1 — if seed prevalence is wrong no
+                                      other parameter can compensate"}
+
+  hiv.dur_latent_mult:   {low: 0.6,  high: 1.4,
+                          was: "fixed; dur_latent = lognorm_ex(10y, 3y)",
+                          rationale: "suspect 3a — untreated survival time.
+                                      Anchored on median untreated survival
+                                      ~9-11y in sub-Saharan Africa",
+                          applied_as: "dur_latent = lognorm_ex(10*m y, 3*m y)"}
+
+  hiv.mort_mult:         {low: 0.5,  high: 3.0,
+                          was: "fixed; hard-coded in HIV.make_p_hiv_death()",
+                          rationale: "suspect 3b — death rate at a given CD4.
+                                      Scales the annual rate before to_prob(dt)
+                                      so no probability can exceed 1",
+                          applied_as: "hiv_mortality.HIVMortalityMultiplier"}
+
+targets:
+  file: experiments/008_calibration_targets/outputs/calibration_targets.csv
+  frozen_in: 008
+  quantities:
+    - prevalence      # PHIA by age/sex/year (2007, 2011, 2016)
+    - aids_deaths     # UNAIDS annual
+  note: unchanged from 009 — do not edit, the comparison depends on it
+
+coverage:
+  envelope: [5, 95]   # percentile across draws, per target row
+  criterion: obs_value within [p05, p95]
+  baseline_009:
+    overall: 30/89 (34%)
+    aids_deaths: 7/35 (20%)
+    prevalence: 23/54 (43%)
+
+compute:
+  host: raccoon (Azure HB120rs_v2, 120 cores, spot)
+  n_workers: all
+  resume: per-sim parquet in outputs/sims/ — reruns skip completed draws

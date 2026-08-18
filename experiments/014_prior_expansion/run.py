@@ -290,6 +290,63 @@ def plot_deaths_coverage(targets, ensemble, path: Path) -> None:
     plt.close(fig)
 
 
+def plot_prior_diagnostics(draws, ensemble, targets, path: Path) -> None:
+    """Which prior parameters actually move prevalence, and are they at a bound?
+
+    A coverage failure is only actionable once you know whether the model can
+    reach the data at all. Panel A ranks the prior parameters by how strongly
+    they move a well-observed target; panel B plots the dominant one against
+    that target, so a pile-up at the prior bound is visible directly.
+    """
+    ref = {"year": 2016, "sex": "F", "age_low": 30, "age_high": 35}
+    col = model_prev_col(ref["sex"], ref["age_low"], ref["age_high"])
+    obs_row = targets[(targets["quantity"] == "prevalence")
+                      & (targets["year"] == ref["year"])
+                      & (targets["sex"] == ref["sex"])
+                      & (targets["age_low"] == ref["age_low"])]
+    if not len(obs_row) or col not in ensemble.columns:
+        return
+    obs = float(obs_row["value"].iloc[0])
+
+    s = (ensemble[ensemble["timevec"] == ref["year"]][["par_idx", col]]
+         .dropna().set_index("par_idx")[col])
+    m = draws.set_index("par_idx").join(s.rename("y")).dropna(subset=["y"])
+    par_cols = [c for c in draws.columns if c != "par_idx"]
+    rho = m[par_cols + ["y"]].corr(method="spearman")["y"].drop("y").sort_values()
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5))
+
+    ax1.barh(range(len(rho)), rho.values,
+             color=["C3" if v < 0 else "C0" for v in rho.values])
+    ax1.set_yticks(range(len(rho)))
+    ax1.set_yticklabels([c.split(".", 1)[1] for c in rho.index], fontsize=9)
+    ax1.axvline(0, color="k", lw=0.8)
+    ax1.set_xlabel("Spearman rho with target")
+    ax1.set_title(f"A. What moves {ref['sex']} {ref['age_low']}-{ref['age_high']} "
+                  f"prevalence in {ref['year']}?", fontsize=10)
+    ax1.grid(alpha=0.3, axis="x")
+
+    top = rho.abs().idxmax()
+    lo, hi = PRIOR[top]
+    ax2.scatter(m[top], m["y"], s=28, color="C0", alpha=0.8, zorder=3)
+    ax2.axhline(obs, color="C3", lw=1.5, ls="--", zorder=2,
+                label=f"PHIA observed ({obs:.3f})")
+    ax2.axvline(hi, color="k", lw=1.2, ls=":", zorder=2, label="prior upper bound")
+    ax2.set_xlim(lo - 0.03 * (hi - lo), hi + 0.08 * (hi - lo))
+    ax2.set_xlabel(top)
+    ax2.set_ylabel(f"Simulated prevalence, {ref['sex']} "
+                   f"{ref['age_low']}-{ref['age_high']}, {ref['year']}")
+    ax2.set_title("B. Best draws sit at the prior's upper bound", fontsize=10)
+    ax2.grid(alpha=0.3)
+    ax2.legend(fontsize=8, loc="upper left")
+
+    fig.suptitle("Exp 014 — the coverage miss is driven by transmission and "
+                 "seeding, not by the mortality parameters it opened", fontsize=12)
+    fig.tight_layout()
+    fig.savefig(path, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+
 # --- Main ------------------------------------------------------------------
 
 def main() -> None:
@@ -342,6 +399,8 @@ def main() -> None:
 
     plot_prevalence_coverage(targets, ensemble, FIG_DIR / "coverage_prevalence.png")
     plot_deaths_coverage(targets, ensemble, FIG_DIR / "coverage_deaths.png")
+    plot_prior_diagnostics(pd.read_csv(OUT_DIR / "draws.csv"), ensemble, targets,
+                           FIG_DIR / "prior_diagnostics.png")
     print(f"\nWrote outputs to {OUT_DIR} and figures to {FIG_DIR}")
 
 

@@ -57,21 +57,50 @@ than confounding it with a prior change.
 first coverage check — so the result also speaks to why 014 sits below 009.
 10 seeds per arm.
 
-**Constructing the HIV-deleted rates.** The file has decadal values (1985, 1995,
-2005, 2015, 2025, …) and the hump spans 1995–2015. First pass: interpolate
-age/sex-specific rates between 1985 and 2025, replacing the intervening years.
-This is an approximation and its assumptions must be stated in the SUMMARY —
-it treats 1985 and 2025 as AIDS-free (2025 still carries residual AIDS
-mortality) and ignores secular non-AIDS improvement over the period. The more
-rigorous construction is to subtract UNAIDS AIDS deaths by age and sex from
-all-cause deaths, which needs age/sex-disaggregated AIDS deaths we may not have.
-If the effect turns out to be large, the fix deserves the rigorous version and
-that becomes its own experiment.
+**Constructing the HIV-deleted rates.** Checked what the repo actually holds
+before choosing. All-cause mortality *is* age/sex-disaggregated
+(`data/eswatini_deaths.csv`: Time × Sex × AgeStart, decadal). The quantity that
+would be subtracted is not: in `data/eswatini_hiv_calib.csv`, AIDS deaths
+(`hiv.new_deaths`) is a single national annual column, 1990–2024, both sexes,
+no age breakdown — the only undisaggregated quantity in a 43-column file where
+prevalence is split by age and sex and PLHIV by age band. So the direct
+subtraction `all_cause[age,sex,year] − aids[age,sex,year]` cannot be computed
+from what is here.
+
+Three constructions, in increasing order of cost:
+
+1. **Interpolation (this experiment).** Interpolate age/sex rates between 1985
+   and 2025, replacing 1995/2005/2015. Assumes both endpoints are AIDS-free
+   (2025 still carries residual AIDS mortality) and ignores secular non-AIDS
+   improvement. Crude, but sufficient to size the effect, which is all this
+   experiment needs.
+2. **Apportionment.** Split the national AIDS-death total across strata using
+   UNAIDS' own PLHIV distribution as weights — `hiv_epi.n_infected_0_14` and
+   `hiv_epi.n_infected_15_100` form a clean child/adult partition, and
+   `hiv.n_infected_f` gives a sex split. Assumes AIDS mortality is proportional
+   to PLHIV within a stratum, which ignores ART coverage varying by age. Coarse
+   (2 age groups × 2 sexes, not 5-year bins) and needs population denominators
+   by age/sex/year to convert counts to rates.
+3. **Sourced.** HIV-deleted life tables, or age/sex-disaggregated AIDS deaths
+   from UNAIDS AIDSinfo. Requires going outside the repo.
+
+**Deliberately using (1) here.** Options 2 and 3 are real data-construction
+work, and doing that before knowing whether the effect is 2 % or 50 % is
+premature. If this experiment shows the effect is material, the fix gets its own
+experiment using (2) or (3).
 
 **Provenance.** No script in this repo generates `data/eswatini_deaths.csv` and
 its source is undocumented. Establishing where it came from (UN WPP release and
 variant, most likely) is part of this experiment — a calibration input this
 consequential should not have unknown provenance.
+
+**Documentation correction.** CLAUDE.md and
+[008's README](../008_calibration_targets/README.md) both cite
+`data/eswatini_deaths.csv` as the source of the UNAIDS deaths target. It is
+actually `data/eswatini_hiv_calib.csv` (see
+[008's run.py](../008_calibration_targets/run.py) line 74). CLAUDE.md has been
+corrected; 008 is closed and left as written, so the correction is recorded
+here.
 
 ## Metrics
 

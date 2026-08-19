@@ -22,7 +22,13 @@ parameter space pays off. **Leading method (deferred to
 
 **Calibration targets.**
 - PHIA prevalence by age, sex, year (`calibration_data/prevalence_by_age_sex.csv` and PHIA files in `external_data/`)
-- UNAIDS deaths (`data/eswatini_deaths.csv`)
+- UNAIDS deaths (`data/eswatini_hiv_calib.csv`, column `hiv.new_deaths`)
+  — **corrected 2026-08-19.** This entry, and the source table in
+  `experiments/008_calibration_targets/README.md`, previously cited
+  `data/eswatini_deaths.csv`. That is a different file: all-cause
+  mortality *rates* by age/sex fed to `ss.Deaths` as background
+  mortality, not the UNAIDS AIDS-death *counts* used as a target.
+  008's README is closed and left as written; see exp 016.
 - UNAIDS age distribution (`data/eswatini_age_1985.csv`)
 
 **Validation hold-out (NOT a fitting target):**

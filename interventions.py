@@ -8,6 +8,8 @@ import sciris as sc
 import starsim as ss
 import stisim as sti
 
+from vmmc import VMMCPrevalenceTarget
+
 
 
 def get_testing_products():
@@ -62,18 +64,34 @@ def get_testing_products():
     return tests
 
 
-def make_interventions():
+def _normalize_age_bin_format(df):
+    # Convert "[15,25)" / "[15:25)" interval notation to "15-25" (the format
+    # expected by upstream stisim's ss.parse_age_range as of v1.5.5).
+    if 'AgeBin' in df.columns:
+        df = df.copy()
+        df['AgeBin'] = df['AgeBin'].astype(str).str.replace(r'^\[(\d+)[,:](\d+)\)$', r'\1-\2', regex=True)
+    return df
 
-    art_data = pd.read_csv('data/art_coverage.csv')
-    # n_vmmc = pd.read_csv(f'data/n_vmmc.csv').set_index('year')
+
+def make_interventions(vmmc_class=None):
+    # Default VMMC is the in-repo VMMCPrevalenceTarget (prevalence-target
+    # semantics). Upstream sti.VMMC (stisim 1.5.6-1.5.8) applies coverage as a
+    # per-step hazard and overshoots to ~100%; the exp-005 fix that corrected
+    # this was a local patch to stisim that the 1.5.6 rewrite overwrote, so the
+    # fix now lives here (see vmmc.py, experiments/015). Pass vmmc_class=sti.VMMC
+    # to A/B against upstream. Drop this once stisim ships the upstream fix.
+    vmmc_class = vmmc_class or VMMCPrevalenceTarget
+
+    art_data = _normalize_age_bin_format(pd.read_csv('data/art_coverage.csv'))
+    vmmc_data = _normalize_age_bin_format(pd.read_csv('data/vmmc_coverage.csv'))
     tests = get_testing_products()
     art = sti.ART(coverage=art_data)
-    # vmmc = sti.VMMC(coverage_data=n_vmmc)
+    vmmc = vmmc_class(coverage=vmmc_data)
     prep = sti.Prep()
 
     interventions = tests + [
         art,
-        # vmmc,
+        vmmc,
         prep,
     ]
 

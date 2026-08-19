@@ -69,11 +69,14 @@ from what is here.
 
 Three constructions, in increasing order of cost:
 
-1. **Interpolation (this experiment).** Interpolate age/sex rates between 1985
-   and 2025, replacing 1995/2005/2015. Assumes both endpoints are AIDS-free
-   (2025 still carries residual AIDS mortality) and ignores secular non-AIDS
-   improvement. Crude, but sufficient to size the effect, which is all this
-   experiment needs.
+1. **Log-linear interpolation (this experiment).** Interpolate age/sex rates
+   log-linearly between 1985 and 2025, replacing 1995/2005/2015. Log-linear
+   (constant proportional decline) rather than linear, because that is how
+   mortality trends usually behave. The interpolated line *is* the non-AIDS
+   counterfactual — it carries the genuine secular improvement (child survival,
+   etc.) — and only the observed excess above it is attributed to AIDS.
+   Assumes 1985 and 2025 are AIDS-free (2025 still carries residual AIDS
+   mortality) and that non-AIDS mortality moved smoothly in between.
 2. **Apportionment.** Split the national AIDS-death total across strata using
    UNAIDS' own PLHIV distribution as weights — `hiv_epi.n_infected_0_14` and
    `hiv_epi.n_infected_15_100` form a clean child/adult partition, and
@@ -114,6 +117,37 @@ here.
    removing the inflated mortality will overshoot it — which would mean the
    double-counting is partly compensating for something else and the fix is not
    as simple as deleting the hump.
+5. **Implied AIDS deaths vs the UNAIDS target — validation of the
+   construction.** Multiply the deleted excess mortality rate by population in
+   each age/sex bin, sum, and compare to `hiv.new_deaths` in
+   `data/eswatini_hiv_calib.csv`. If the interpolation implies roughly the AIDS
+   deaths UNAIDS reports, the construction is externally validated. If it
+   implies substantially more, it is over-deleting. Population denominators by
+   age/sex are not in the repo, so the model's own simulated population is used
+   — mildly circular, but adequate for a magnitude check.
+
+## What the construction already predicts, before running anything
+
+Subtracting the log-linear trend from observed 2005 rates gives an implied AIDS
+share of all-cause mortality with this age profile (female / male):
+
+| age | 0 | 10 | 20 | 30 | **35** | 45 | 60 | 70 | 80 |
+|---|---|---|---|---|---|---|---|---|---|
+| F | 43 % | 56 % | 74 % | 84 % | **84 %** | 78 % | 61 % | 41 % | 0 % |
+| M | 40 % | 55 % | 61 % | 77 % | **79 %** | 74 % | 54 % | 32 % | 0 % |
+
+The shape is textbook AIDS — low in childhood, climbing through the twenties,
+peaking in the mid-thirties, falling with age, and vanishing at 80+. Nothing
+imposed that; it falls out of the subtraction. That is real evidence the method
+detects the right signal.
+
+Two bins where it is probably over-attributing, to be checked against metric 5:
+**ages 5–10** (~50 % AIDS, but perinatally infected children mostly die before
+5) and **ages 55–70** (50–60 % AIDS, but HIV prevalence there is far below the
+30s). Both look like a log-linear counterfactual being too rigid and dumping
+residual into "AIDS". The 25–45 range, where the epidemiology is strongest, is
+where the construction should be trusted most. If metric 5 shows over-deletion,
+restricting the deletion to adult ages is the first thing to try.
 
 ## Success criteria
 

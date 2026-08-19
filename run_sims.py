@@ -21,7 +21,8 @@ FIGURES_DIR = 'figures'
 
 
 def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
-             hiv_pars=None, network_pars=None, vmmc_class=None, hiv_class=None):
+             hiv_pars=None, network_pars=None, vmmc_class=None, hiv_class=None,
+             datafolder=None):
 
     # Condom data: stisim defaults x0.5 for non-marital pairings (act-level usage
     # is roughly half of DHS-reported "ever-used at last sex"). LL pairing kept
@@ -89,9 +90,14 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
     )
     hiv_data = pd.read_csv(f'{DATA_DIR}/eswatini_hiv_calib.csv')
 
+    # datafolder supplies the demographic inputs (deaths, asfr, migration, age).
+    # Overriding it lets an experiment swap those without touching data/ — used by
+    # experiments/016 to A/B all-cause vs HIV-deleted background mortality. The
+    # other data reads above are deliberately still relative to data/, so only
+    # demographics change.
     sim = sti.Sim(
         pars=simpars,
-        datafolder='data/',
+        datafolder=datafolder or 'data/',
         demographics=LOCATION.lower(),
         diseases=[hiv],
         networks=networks,

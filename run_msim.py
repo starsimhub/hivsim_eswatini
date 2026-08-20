@@ -18,6 +18,7 @@ os.environ.update(
     MKL_NUM_THREADS='1',
 )
 
+import argparse
 import numpy as np
 import sciris as sc
 import stisim as sti
@@ -103,10 +104,12 @@ def save_results(sims):
 
 if __name__ == '__main__':
 
-    n_pars = 200
-    stop = 2026
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--n_pars', type=int, default=200)
+    parser.add_argument('--stop', type=int, default=2026)
+    args = parser.parse_args()
 
-    sims = run_msim(n_pars=n_pars, stop=stop)
+    sims = run_msim(n_pars=args.n_pars, stop=args.stop)
 
     if len(sims) > 0:
         cs = save_results(sims)

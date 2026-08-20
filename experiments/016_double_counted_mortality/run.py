@@ -16,6 +16,7 @@ Outputs:
   outputs/scorecard.csv            headline A/B numbers
   figures/mortality_ab_{pset}.png
   figures/aids_share_by_age.png
+  figures/mortality_curves_by_age.png
   figures/implied_vs_unaids.png
 
 Usage (from repo root):
@@ -201,12 +202,20 @@ def implied_aids_deaths(df: pd.DataFrame, construction: pd.DataFrame) -> pd.Data
     pop["Sex"] = pop["sex"].map({"f": "Female", "m": "Male"})
     pop["AgeStart"] = pop["age_low"].astype(int)
 
+    # The mortality data is by SINGLE year of age; the population is in 5-year
+    # bins. Merging them directly applies age 0's rate to the whole 0-4 bin,
+    # which massively over-counts infants (age 0 mortality is ~5x ages 1-4) and
+    # inflates the apparent child share of AIDS deaths. Average the single-year
+    # rates within each bin first.
+    c = construction[["Time", "Sex", "AgeStart", "deleted_rate"]].copy()
+    c["AgeStart"] = (c["AgeStart"] // 5) * 5
+    c = c.groupby(["Time", "Sex", "AgeStart"], as_index=False)["deleted_rate"].mean()
+
     # The mortality data is decadal, so the deleted rate has to be spread across
     # intervening years. Linear interpolation, matching how starsim interpolates
     # the rate data itself — a step/carry-forward would misstate the years
     # between anchors, which is most of the epidemic.
     years = np.array(sorted(pop.year.unique()), dtype=float)
-    c = construction[["Time", "Sex", "AgeStart", "deleted_rate"]]
     filled = []
     for (sex, age), g in c.groupby(["Sex", "AgeStart"]):
         g = g.sort_values("Time")
@@ -286,6 +295,49 @@ def plot_aids_share(construction, path):
                  "(peaks mid-30s, vanishes at 80+; nothing imposed this)", fontsize=10)
     ax.grid(alpha=0.3); ax.legend(fontsize=7, ncol=3)
     fig.tight_layout(); fig.savefig(path, dpi=120, bbox_inches="tight"); plt.close(fig)
+
+
+def plot_mortality_curves(construction, path, xmax=2035):
+    """Observed all-cause vs the non-AIDS counterfactual, per age and sex.
+
+    The audit figure for the construction: the gap between the solid and dashed
+    line in each panel is what gets attributed to AIDS. Reading it by age is how
+    the misallocation shows up — the gap should be widest in the 25-45 panels and
+    near-absent in the very young and very old, and it is not.
+    """
+    ages = [0, 1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80]
+    ncol, nrow = 6, 3
+    fig, axes = plt.subplots(nrow, ncol, figsize=(19, 9), sharex=True)
+    c = construction[construction.Time <= xmax]
+
+    for ax, age in zip(axes.flat, ages):
+        for sex, col in (("Female", "C3"), ("Male", "C0")):
+            g = c[(c.AgeStart == age) & (c.Sex == sex)].sort_values("Time")
+            if not len(g):
+                continue
+            ax.plot(g.Time, g.Value_all_cause, color=col, lw=1.8, marker="o", ms=3,
+                    label=f"{sex} all-cause")
+            ax.plot(g.Time, g.Value_non_aids, color=col, lw=1.4, ls="--", marker="s",
+                    ms=2.5, alpha=0.85, label=f"{sex} non-AIDS")
+            ax.fill_between(g.Time, g.Value_non_aids, g.Value_all_cause,
+                            color=col, alpha=0.12)
+        ax.set_yscale("log")
+        ax.set_title(f"age {age}", fontsize=9)
+        ax.grid(alpha=0.3, which="both")
+        ax.tick_params(labelsize=7)
+
+    for ax in axes.flat[len(ages):]:
+        ax.set_visible(False)
+    for ax in axes[-1]:
+        ax.set_xlabel("Year", fontsize=8)
+    for ax in axes[:, 0]:
+        ax.set_ylabel("Mortality rate (log)", fontsize=8)
+    axes.flat[0].legend(fontsize=6, loc="upper left")
+
+    fig.suptitle("Exp 016 — observed all-cause mortality (solid) vs the non-AIDS "
+                 "counterfactual (dashed). Shaded gap is what the construction "
+                 "attributes to AIDS.", fontsize=12)
+    fig.tight_layout(); fig.savefig(path, dpi=110, bbox_inches="tight"); plt.close(fig)
 
 
 def plot_implied(implied, targets, path):
@@ -375,6 +427,7 @@ def main():
     for pset in PARAM_SETS:
         plot_ab(df, attr, targets, FIG_DIR / f"mortality_ab_{pset}.png", pset)
     plot_aids_share(construction, FIG_DIR / "aids_share_by_age.png")
+    plot_mortality_curves(construction, FIG_DIR / "mortality_curves_by_age.png")
     plot_implied(implied, targets, FIG_DIR / "implied_vs_unaids.png")
     print(f"\nWrote outputs to {OUT_DIR} and figures to {FIG_DIR}")
 

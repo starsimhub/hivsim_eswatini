@@ -36,15 +36,50 @@ BASE_YEAR = 1985   # pre-epidemic anchor
 END_YEAR = 2025    # post-epidemic anchor
 
 
+def _warp(u: np.ndarray, method: str, par: float) -> np.ndarray:
+    """Map elapsed fraction u in [0,1] to interpolation weight in [0,1].
+
+    The weight is what decides how much of the decline has happened by a given
+    year, and therefore how much of the observed rate is called AIDS. It is the
+    single most consequential assumption in the construction, and it is *not*
+    identifiable from this data — there are only two AIDS-free anchors, with
+    every year between them contaminated.
+
+      loglinear/linear : w = u, constant (proportional / absolute) change
+      power            : w = u**par. par > 1 delays the decline (counterfactual
+                         stays high mid-period, so LESS is attributed to AIDS);
+                         par < 1 front-loads it.
+      sigmoid          : symmetric S-curve, slow-fast-slow. Note this is a no-op
+                         at the midpoint year — a symmetric sigmoid passes
+                         through the midpoint at u = 0.5, exactly where linear
+                         does. It changes the shoulders, not the peak.
+    """
+    if method in ('loglinear', 'linear'):
+        return u
+    if method == 'power':
+        return u ** par
+    if method == 'sigmoid':
+        f = lambda x: 1.0 / (1.0 + np.exp(-par * (x - 0.5)))
+        return (f(u) - f(0.0)) / (f(1.0) - f(0.0))
+    raise ValueError(f'unknown method: {method}')
+
+
 def build_hiv_deleted(deaths_df: pd.DataFrame,
                       base_year: int = BASE_YEAR,
-                      end_year: int = END_YEAR) -> pd.DataFrame:
+                      end_year: int = END_YEAR,
+                      method: str = 'loglinear',
+                      par: float = 1.0) -> pd.DataFrame:
     """Return a copy of `deaths_df` with the AIDS hump removed.
 
-    Rates strictly between `base_year` and `end_year` are replaced by a
-    log-linear interpolation of the two anchors, per (Sex, AgeStart). Rates are
-    only ever lowered — if the observed rate is already at or below the
-    counterfactual, it is kept, so bins AIDS never touched are unchanged.
+    Rates strictly between `base_year` and `end_year` are replaced by an
+    interpolation of the two anchors, per (Sex, AgeStart). Rates are only ever
+    lowered — if the observed rate is already at or below the counterfactual it
+    is kept, so bins AIDS never touched are unchanged.
+
+    `method='loglinear'` (the default, and what exp 016 ran) interpolates
+    geometrically: constant *proportional* change, i.e. exponential decay.
+    `method='linear'` interpolates arithmetically, which sits above the
+    geometric curve mid-period and so attributes less to AIDS.
     """
     df = deaths_df.copy()
     anchors = df[df.Time.isin([base_year, end_year])]
@@ -53,15 +88,16 @@ def build_hiv_deleted(deaths_df: pd.DataFrame,
 
     mid = df.Time.between(base_year, end_year, inclusive='neither')
     idx = pd.MultiIndex.from_frame(df.loc[mid, ['Sex', 'AgeStart']])
-    w = ((df.loc[mid, 'Time'] - base_year) / (end_year - base_year)).values
+    u = ((df.loc[mid, 'Time'] - base_year) / (end_year - base_year)).values
+    w = _warp(u, method, par)
 
-    # Log-linear: constant proportional change between anchors. Mortality trends
-    # are multiplicative, so this is the right interpolation; linear would
-    # overstate the counterfactual mid-period and under-attribute to AIDS.
     a = lo.reindex(idx).values
     b = hi.reindex(idx).values
     with np.errstate(divide='ignore', invalid='ignore'):
-        cf = np.exp((1 - w) * np.log(a) + w * np.log(b))
+        if method == 'linear':
+            cf = (1 - w) * a + w * b
+        else:
+            cf = np.exp((1 - w) * np.log(a) + w * np.log(b))
     cf = np.where(np.isfinite(cf), cf, df.loc[mid, 'Value'].values)
 
     # Never raise a rate: only the excess above the counterfactual is AIDS.

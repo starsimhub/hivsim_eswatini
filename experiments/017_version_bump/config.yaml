@@ -1,6 +1,7 @@
 # Experiment 017 — Version bump: stisim 1.5.8 -> 1.5.11, starsim 3.5.0 -> 3.5.2
-# Three arms at fixed parameters and seeds. Each ADJACENT PAIR differs by one
-# thing: A->B is the version, B->C is the background mortality data.
+# Four arms at fixed parameters and seeds. Each ADJACENT PAIR differs by one
+# thing: A->B is the version, B->C is the background mortality data, B->D is
+# rel_death_f. D was added mid-experiment and is not pre-registered.
 # Same design lineage as 015 (broken vs fixed VMMC) and 016 (all-cause vs
 # HIV-deleted mortality).
 
@@ -17,7 +18,7 @@ environment:
   note: >
     stisim and starsim are editable installs from a single checkout each, so the
     version is a property of the ENVIRONMENT, not of the run. Arm A runs on the
-    current stack; then the checkouts move to the tags and arms B and C run.
+    current stack; then the checkouts move to the tags and arms B, C and D run.
     run.py detects the installed version and refuses to run an arm that does not
     match it, so a forgotten checkout move cannot silently corrupt the A/B.
 
@@ -45,6 +46,19 @@ arms:
       background AIDS RAISED HIV-module deaths 3376 -> 3856 at 2005), so arm B
       alone understates the effect.
 
+  D_1_5_11_no_reldeathf:
+    stisim: 1.5.11
+    starsim: 3.5.2
+    datafolder: data/           # as shipped — all-cause mortality
+    hiv_pars: {rel_death_f: 1.0}
+    added: 2026-08-26, mid-experiment — NOT pre-registered in the README
+    description: >
+      isolates rel_death_f, a parameter NEW in 1.5.11 (zero occurrences in
+      1.5.8 and 1.5.10) giving women a 26% HIV-mortality reduction that did not
+      exist before. Added after a first pass proposed it as the mechanism for an
+      apparent prevalence rise; D vs B refuted that (|z| <= 0.9 everywhere).
+      Uses the same seeds; resume left A, B and C untouched.
+
 model:
   builder: run_sims.make_sim
   parameters: 016's two sets — deliberately identical, so A reproduces 016's
@@ -53,7 +67,7 @@ model:
   start: 1985
   stop: 2026
   n_seeds: 10
-  total_sims: 60                # 3 arms x 2 psets x 10 seeds, ~13 min locally
+  total_sims: 80                # 4 arms x 2 psets x 10 seeds (D added mid-experiment)
 
 param_sets:
   default: {}

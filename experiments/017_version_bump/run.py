@@ -74,11 +74,18 @@ ALT_DATAFOLDER = OUT_DIR / "data_hiv_deleted"
 
 # --- Arms and version gating -------------------------------------------------
 
-# arm -> (required stisim version, HIV-deleted mortality?)
+# arm -> (required stisim version, HIV-deleted mortality?, extra HIV pars)
+#
+# Arm D isolates `rel_death_f`, the mechanism observation 6 proposes for the
+# prevalence rise. It is a NEW parameter in 1.5.11 -- zero occurrences in 1.5.8
+# and 1.5.10 -- giving women a 26% HIV-mortality reduction that did not exist
+# before. Setting it to 1.0 removes the sex differential while leaving every
+# other 1.5.11 change in place, so D vs B is the clean measurement of it.
 ARMS = {
-    "A_1_5_8":              ("1.5.8",  False),
-    "B_1_5_11":             ("1.5.11", False),
-    "C_1_5_11_hiv_deleted": ("1.5.11", True),
+    "A_1_5_8":              ("1.5.8",  False, {}),
+    "B_1_5_11":             ("1.5.11", False, {}),
+    "C_1_5_11_hiv_deleted": ("1.5.11", True,  {}),
+    "D_1_5_11_no_reldeathf": ("1.5.11", False, {"rel_death_f": 1.0}),
 }
 
 # 016's two sets, deliberately unchanged: arm A then reproduces 016's arm A and
@@ -101,7 +108,7 @@ def installed():
 def arms_runnable():
     """Arms whose required stisim version matches what is actually installed."""
     sti_ver, _ = installed()
-    return [a for a, (req, _) in ARMS.items() if req == sti_ver]
+    return [a for a, (req, *_) in ARMS.items() if req == sti_ver]
 
 
 def vmmc_class_for_version():
@@ -312,14 +319,14 @@ def run_one(arm: str, pset: str, seed: int) -> pd.DataFrame:
     if path.exists():
         return pd.read_parquet(path)
 
-    _, hiv_deleted = ARMS[arm]
+    _, hiv_deleted, extra_pars = ARMS[arm]
     datafolder = str(ALT_DATAFOLDER) if hiv_deleted else None
     sti_ver, ss_ver = installed()
 
     t0 = time.perf_counter()
     sim = make_sim(seed=seed, stop=SIM_STOP, verbose=-1, datafolder=datafolder,
                    vmmc_class=vmmc_class_for_version(),
-                   hiv_pars=dict(PARAM_SETS[pset]) or None,
+                   hiv_pars={**PARAM_SETS[pset], **extra_pars} or None,
                    analyzers=[PopByAgeSex(), CircByAge(), PrepUptake()])
     sim.run()
     elapsed = time.perf_counter() - t0
@@ -425,10 +432,12 @@ def reproduction_check(df: pd.DataFrame) -> pd.DataFrame:
 
 # --- Figures -----------------------------------------------------------------
 
-ARM_COLORS = {"A_1_5_8": "C3", "B_1_5_11": "C0", "C_1_5_11_hiv_deleted": "C2"}
+ARM_COLORS = {"A_1_5_8": "C3", "B_1_5_11": "C0", "C_1_5_11_hiv_deleted": "C2",
+              "D_1_5_11_no_reldeathf": "C4"}
 ARM_LABELS = {"A_1_5_8": "A: 1.5.8, all-cause",
               "B_1_5_11": "B: 1.5.11, all-cause",
-              "C_1_5_11_hiv_deleted": "C: 1.5.11, HIV-deleted"}
+              "C_1_5_11_hiv_deleted": "C: 1.5.11, HIV-deleted",
+              "D_1_5_11_no_reldeathf": "D: 1.5.11, rel_death_f=1"}
 
 
 def _band(ax, g, col, color, label):

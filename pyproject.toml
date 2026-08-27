@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "starsim>=3.5.2",
-    "stisim>=1.5.10",
+    "stisim>=1.5.11",  # adopted in exp 018; 1.5.11 verified behaviourally neutral
     "numpy",
     "pandas",
     "matplotlib",

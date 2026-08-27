@@ -1,0 +1,146 @@
+# Experiment 018 — Adopt the 1.5.11 stack, then size the model
+#
+# Two parts. Part 1 applies the five pending changes and measures the only one
+# whose effect is unknown (PrEP removal), against 017's arm C as the control.
+# Part 2 measures run time, population size, replicate count and the epidemic
+# establishment threshold — the configuration questions deferred from 016 and
+# 017 because the model underneath kept changing.
+
+experiment: 018_adopt_and_size
+question: >
+  What does adopting the pending stack changes actually do, and how should the
+  model be configured for calibration — N agents, replicates per parameter set,
+  and which parts of the prior produce an epidemic at all?
+
+environment:
+  model_tag: model-v1.1        # this experiment defines it — see `adoption` below
+  stisim: 1.5.11               # tag v1.5.11, adopted by 017
+  starsim: 3.5.2               # tag v3.5.2
+  python: "3.14"               # local; raccoon runs uv-managed 3.12
+
+# --- Part 1: adoption --------------------------------------------------------
+
+adoption:
+  authority: 017's Acceptance and Next; PrEP decision 2026-08-26
+  changes:
+    mortality:
+      what: HIV-deleted background mortality promoted to a repo-level input
+      how: >
+        stidata.get_rates resolves the deaths file by convention as
+        {location}_deaths.csv, so there is no way to point stisim at an
+        alternately-named file without swapping the whole datafolder. The
+        original all-cause rates are preserved as
+        data/eswatini_deaths_all_cause.csv (a name stisim will not read) and
+        data/eswatini_deaths.csv is rebuilt from it by mortality_construction.py,
+        promoted from 016 to the repo root. 482 of 2424 rows lowered, years
+        1995/2005/2015 — identical to 016's construction.
+      effect: known — 017 measured +6.1% prevalence (z = 2.61), the only
+        significant prevalence effect in that experiment
+    vmmc:
+      what: vmmc.py deleted; make_interventions defaults to upstream sti.VMMC
+      effect: none — 017 obs 2 measured circumcision 15-49 at 0.084 vs 0.084
+        (2005) and 0.474 vs 0.475 (2021)
+      note: vmmc_class kept as an injection point for future A/Bs
+    prep:
+      what: the sti.Prep() call removed entirely
+      effect: UNMEASURED — this is what part 1 measures
+      why: >
+        coverage=None does not mean off. Both 1.5.8 and 1.5.11 fall back to
+        {'year': [2004, 2005, 2015, 2025], 'value': [0, 0.01, 0.5, 0.8]} on FSW
+        (10% of women). Every experiment from 001 to 017 ran with that
+        undeclared default, starting in 2004 — a decade before PrEP had efficacy
+        evidence. 017 measured realised protection at ~0.67 of uninfected FSW by
+        2021. A fabricated intervention inside the calibration window biases the
+        transmission parameters that absorb it.
+      returns: deliberately specified from programme data, for the decision
+        analysis — it is half the question in CLAUDE.md
+    dashboard:
+      what: plot_dashboard.py reads sim.diseases.hiv.circumcised
+      effect: none — not on the sim path
+    pin:
+      what: pyproject.toml stisim>=1.5.11
+      effect: none — declared now matches installed
+
+  arms:
+    current:
+      source: ../017_version_bump/outputs/results.parquet, arm C_1_5_11_hiv_deleted
+      rerun: false            # re-used from disk; identical configuration bar PrEP
+      description: 1.5.11 + HIV-deleted mortality + PrEP default ON
+    adopted:
+      description: the same, with PrEP removed — isolates PrEP removal exactly
+  n_seeds: 10
+  param_sets: [default, high_transmission]   # 016's two sets, for continuity
+
+# --- Part 2: model setup -----------------------------------------------------
+
+sizing:
+  runtime_known: >
+    ~145 s per sim at N=10,000 over 1985-2026, measured across 80 runs in 017
+    (146.4 / 147.5 / 142.1 s for its three 10-seed arms). Flat across stisim
+    1.5.8 and 1.5.11.
+
+  expected_counts_precomputed: >
+    From 017 arm C's PopByAgeSex output at N=10,000, against the 54 target rows
+    in calibration_data/prevalence_by_age_sex.csv (3 PHIA years x 2 sexes x
+    5-year bands 15-65): 0 rows below 5 expected infected agents, 2 rows below
+    10 (2011 F 15-19 at 5.1, 2007 M 60-64 at 5.7), 46 rows at or above 20. So
+    N=10,000 is likely nearly adequate and N=20,000 clears the floor — but that
+    is computed at high-transmission prevalence (~0.22), and every count scales
+    down with prevalence. Part 2a tests it rather than assuming it.
+
+  variance_known: >
+    Strongly heteroskedastic, as expected near an epidemic threshold. 017
+    measured between-seed SD of trajectory-mean prevalence at 0.0087 at high
+    transmission (CV ~4%) vs 0.0520 at default parameters (CV ~47%) — a sixfold
+    difference driven by stochastic extinction competing with takeoff.
+
+  part_2a_population:
+    n_agents: [5000, 10000, 20000, 50000]
+    n_seeds: 10
+    param_set: high_transmission
+    measures: [per-stratum expected counts, between-seed CV, runtime scaling]
+    watch: >
+      whether runtime scales linearly in N. StructuredSexual pairing is the term
+      to watch; an O(N^2) contact process would rule out N=50,000.
+
+  part_2b_replicates:
+    points:
+      plausible:         {beta_m2f: 0.0139, rel_init_prev: 0.49}
+      low_transmission:  {beta_m2f: 0.008,  rel_init_prev: 0.2}
+      default:           {beta_m2f: 0.01,   rel_init_prev: 0.2}
+    n_seeds: 10
+    n_agents: 10000
+    bands:   # CV -> replicates, standard guidance
+      "<5%":   3-5
+      "5-20%": 10-20
+      ">20%":  50+ or increase N
+    note: size for the plausible region, not the boundary
+
+  part_2c_establishment:
+    beta_m2f:      [0.006, 0.008, 0.010, 0.012, 0.014]
+    rel_init_prev: [0.1, 0.2, 0.35, 0.5]
+    n_seeds: 5
+    n_agents: 10000
+    stop: 2006                # establishment is decided well before this
+    criterion: prevalence 15-49 > 0.05 at 2005
+    why: >
+      Not housekeeping. 014's coverage failure and 017's phantom prevalence
+      effect both trace to draws that produced no epidemic — 2 dead seeds in 10
+      were enough to corrupt a mean and send 017's first pass chasing a
+      mechanism for an effect that was not there. This map says which parts of
+      the prior are usable, and is a prerequisite for coverage check v3.
+
+targets:
+  prevalence: calibration_data/prevalence_by_age_sex.csv   # 54 rows, PHIA
+  deaths: data/eswatini_hiv_calib.csv                      # UNAIDS Spectrum
+  note: NOT data/eswatini_deaths.csv for deaths — that is background mortality
+    rates, and as of this experiment it holds the HIV-deleted version
+
+compute:
+  host: local laptop (C:\Python314\python.exe)
+  n_workers: all
+  estimate: >
+    part 1 ~5 min (20 sims), 2a ~21 min (40 sims, runtime scaling with N),
+    2b ~7 min (30 sims), 2c ~12 min (100 short sims). ~45 min total.
+  resume: per-part parquet in outputs/sims/ — a cell whose file exists is never
+    re-run, so parts can be run independently and interrupted safely.

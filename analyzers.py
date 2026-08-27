@@ -176,3 +176,50 @@ class NetworkSnapshot(ss.Analyzer):
                 if etype in dur_by_type:
                     dur_by_type[etype].append(rel['dur'] * dt_year)
         self.rel_dur_data = dur_by_type
+
+
+class PopByAgeSex(ss.Analyzer):
+    """Population and infection counts by 5-year age band and sex, 0-100.
+
+    Complements `hiv_epi`, which carries the calibration-target age ranges but
+    not the alive-counts needed as stratified denominators. Promoted here by exp
+    018 after being written locally three times (016, 017, 018): 016 needed it
+    for the mortality attribution, 018 needs it to convert population-scaled
+    results back into *agent* counts for the rare-event floor check.
+    """
+    AGE_BINS = [(a, a + 5) for a in range(0, 100, 5)]
+
+    def __init__(self, *args, name='popagesex', **kwargs):
+        super().__init__(*args, **kwargs)
+        self.name = name
+
+    def init_results(self):
+        super().init_results()
+        res = []
+        for sex in ('f', 'm'):
+            for lo, hi in self.AGE_BINS:
+                res.append(ss.Result(f'n_alive_{sex}_{lo}_{hi}', dtype=int, scale=True))
+                res.append(ss.Result(f'n_infected_{sex}_{lo}_{hi}', dtype=int, scale=True))
+            res.append(ss.Result(f'prevalence_{sex}_15_49', dtype=float, scale=False))
+        res.append(ss.Result('n_alive_total', dtype=int, scale=True))
+        res.append(ss.Result('n_infected_total', dtype=int, scale=True))
+        res.append(ss.Result('new_infections_total', dtype=int, scale=True))
+        self.define_results(*res)
+
+    def step(self):
+        sim, ti = self.sim, self.ti
+        ppl, hiv = sim.people, sim.diseases.hiv
+        alive = ppl.alive
+
+        for sex, sex_bool in (('f', ppl.female), ('m', ppl.male)):
+            for lo, hi in self.AGE_BINS:
+                in_bin = alive & sex_bool & (ppl.age >= lo) & (ppl.age < hi)
+                self.results[f'n_alive_{sex}_{lo}_{hi}'][ti] = in_bin.count()
+                self.results[f'n_infected_{sex}_{lo}_{hi}'][ti] = (in_bin & hiv.infected).count()
+            adults = alive & sex_bool & (ppl.age >= 15) & (ppl.age < 50)
+            if adults.count() > 0:
+                self.results[f'prevalence_{sex}_15_49'][ti] = float(np.mean(hiv.infected[adults]))
+
+        self.results['n_alive_total'][ti] = alive.count()
+        self.results['n_infected_total'][ti] = (alive & hiv.infected).count()
+        self.results['new_infections_total'][ti] = (alive & (hiv.ti_infected == ti)).count()

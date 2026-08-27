@@ -8,8 +8,6 @@ import sciris as sc
 import starsim as ss
 import stisim as sti
 
-from vmmc import VMMCPrevalenceTarget
-
 
 
 def get_testing_products():
@@ -89,25 +87,31 @@ def _normalize_age_bin_format(df):
 
 
 def make_interventions(vmmc_class=None):
-    # Default VMMC is the in-repo VMMCPrevalenceTarget (prevalence-target
-    # semantics). Upstream sti.VMMC (stisim 1.5.6-1.5.8) applies coverage as a
-    # per-step hazard and overshoots to ~100%; the exp-005 fix that corrected
-    # this was a local patch to stisim that the 1.5.6 rewrite overwrote, so the
-    # fix now lives here (see vmmc.py, experiments/015). Pass vmmc_class=sti.VMMC
-    # to A/B against upstream. Drop this once stisim ships the upstream fix.
-    vmmc_class = vmmc_class or VMMCPrevalenceTarget
+    # Upstream sti.VMMC gained prevalence/stock-target semantics in stisim 1.5.9
+    # -- the behaviour the in-repo VMMCPrevalenceTarget subclass existed to
+    # supply. Exp 017 confirmed the two are behaviourally identical (circumcision
+    # 15-49: 0.084 vs 0.084 at 2005, 0.474 vs 0.475 at 2021), so vmmc.py was
+    # deleted in exp 018. vmmc_class is kept as an injection point for A/B tests.
+    vmmc_class = vmmc_class or sti.VMMC
 
     art_data = _normalize_age_bin_format(pd.read_csv('data/art_coverage.csv'))
     vmmc_data = _normalize_age_bin_format(pd.read_csv('data/vmmc_coverage.csv'))
     tests = get_testing_products()
     art = sti.ART(coverage=art_data)
     vmmc = vmmc_class(coverage=vmmc_data)
-    prep = sti.Prep()
 
+    # NO PrEP. `sti.Prep()` with coverage=None does not mean "off" -- both 1.5.8
+    # and 1.5.11 fall back to a built-in ramp reaching 80% of FSW by 2025,
+    # starting in 2004, a decade before PrEP had efficacy evidence. Every
+    # experiment from 001 to 017 ran with that undeclared default; exp 017
+    # measured realised protection at ~0.67 of uninfected FSW by 2021.
+    # Removed in exp 018 (decision 2026-08-26): a fabricated intervention in the
+    # calibration window biases the transmission parameters that absorb it.
+    # PrEP returns, deliberately specified from programme data, for the
+    # decision analysis -- it is half the question in CLAUDE.md.
     interventions = tests + [
         art,
         vmmc,
-        prep,
     ]
 
     return interventions

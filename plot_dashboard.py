@@ -108,7 +108,7 @@ class VMMCPrevByAge(ss.Analyzer):
             for lo, hi in VMMC_BINS:
                 self.results[f'p_circ_{lo}_{hi}'][ti] = np.nan
             return
-        circ = sim.interventions['vmmc'].circumcised
+        circ = sim.diseases.hiv.circumcised  # moved from VMMC onto HIV in stisim 1.5.11
         male = ppl.alive & ppl.male
         for lo, hi in VMMC_BINS:
             in_bin = male & (ppl.age >= lo) & (ppl.age < hi)

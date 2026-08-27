@@ -1,4 +1,4 @@
-"""Build HIV-deleted background mortality rates for experiment 016.
+"""Build HIV-deleted background mortality rates.
 
 `data/eswatini_deaths.csv` holds all-cause mortality rates, which for Eswatini
 include AIDS deaths — adult mortality rises ~5.5x to a 2005 peak and returns to
@@ -18,6 +18,15 @@ Stated assumptions, which the SUMMARY must repeat:
     residual gets misattributed to AIDS.
   - Only years strictly between the endpoints are modified. Rates at and beyond
     2025 are projections with no AIDS hump and are left untouched.
+
+Promoted to the repo root by experiment 018 (2026-08-26) after 016 accepted the
+construction and 017 confirmed it is the only change that significantly moves
+prevalence (+6.1%, z = 2.61). Regenerate with:
+
+    python mortality_construction.py
+
+which writes data/eswatini_deaths.csv (HIV-deleted, what stisim reads) and
+leaves data/eswatini_deaths_all_cause.csv as the untouched original.
 
 Sanity check available without running the model: the implied AIDS share of
 all-cause mortality peaks at ~84% in the mid-30s and falls to 0% at 80+, which
@@ -132,3 +141,42 @@ def make_datafolder(src: Path, dest: Path, hiv_deleted: pd.DataFrame,
         shutil.copy2(f, dest / f.name)
     hiv_deleted.to_csv(dest / deaths_filename, index=False)
     return dest
+
+
+# --- Promotion to a repo-level data input (exp 018) --------------------------
+
+DATA_DIR = Path(__file__).resolve().parent / 'data'
+DEATHS_FILE = DATA_DIR / 'eswatini_deaths.csv'          # what stisim reads
+ALL_CAUSE_FILE = DATA_DIR / 'eswatini_deaths_all_cause.csv'  # preserved original
+
+
+def promote(force: bool = False) -> None:
+    """Write the HIV-deleted rates to the file stisim actually reads.
+
+    `stidata.get_rates` resolves the deaths file by convention as
+    `{location}_deaths.csv`, so there is no way to point stisim at an
+    alternately-named file without swapping the whole datafolder. The original
+    all-cause rates are therefore preserved as `eswatini_deaths_all_cause.csv`
+    -- a name stisim will not pick up -- and `eswatini_deaths.csv` is rebuilt
+    from it. Idempotent: re-running always regenerates from the preserved
+    original, never from an already-deleted file.
+    """
+    if not ALL_CAUSE_FILE.exists():
+        ALL_CAUSE_FILE.write_bytes(DEATHS_FILE.read_bytes())
+        print(f'Preserved original all-cause rates -> {ALL_CAUSE_FILE.name}')
+    elif not force:
+        print(f'{ALL_CAUSE_FILE.name} already exists; regenerating from it')
+
+    all_cause = pd.read_csv(ALL_CAUSE_FILE)
+    hiv_deleted = build_hiv_deleted(all_cause)
+    construction = deleted_fraction(all_cause, hiv_deleted)
+    hiv_deleted.to_csv(DEATHS_FILE, index=False)
+
+    n_changed = int((construction.deleted_rate > 1e-12).sum())
+    years = sorted(construction.loc[construction.deleted_rate > 1e-12, 'Time'].unique())
+    print(f'Wrote {DEATHS_FILE.name}: {n_changed} of {len(construction)} rows '
+          f'lowered, years {years}')
+
+
+if __name__ == '__main__':
+    promote()

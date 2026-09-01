@@ -108,6 +108,33 @@ but not the population-size exposure. **This must be settled before coverage
 check v3 reports a coverage fraction**, since a stratum with 3 expected cases
 fails coverage for reasons that have nothing to do with the parameters.
 
+### Correction (2026-09-01) — the sizing estimate above is optimistic
+
+`run.py:144` had the PHIA sex mapping inverted (`"f" if Gender == 0`), so the
+expected-count check paired model male counts against female target rows and
+vice versa. The correct coding is **0 = Male, 1 = Female**, per
+[008's ingestion](../008_calibration_targets/run.py) and confirmed against the
+data: `Gender=1` gives 0.101 prevalence at 15-19 in 2007, which is SDHS
+2006-07's figure for women, with the female peak at 25-29 and the male peak a
+decade later.
+
+The line is now fixed. The floor check itself cannot be regenerated here --
+it is written by the `size` part, which is the part that was deferred -- but
+019 computes the same quantity with the correct mapping, at these same
+high-transmission parameters:
+
+| | as reported above | corrected mapping |
+|---|---|---|
+| thinnest stratum | 5.1 expected infected agents | **0.71** |
+| strata below 10 | 2 | **3** |
+
+The thinnest strata are the young male bins, where prevalence is ~2%, not the
+young female bins. So N = 10 000 leaves at least one target stratum with under
+one expected infected agent, and the "10 000 is nearly enough, 20 000 clears
+the floor" reading above does not hold. This strengthens rather than changes
+the conclusion already recorded: the population-size question is unresolved and
+blocks coverage check v3. It is 020's first job.
+
 ## Acceptance
 
 **Usable downstream.** `model-v1.1` is the configuration for everything that

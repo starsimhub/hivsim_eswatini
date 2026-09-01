@@ -141,7 +141,12 @@ def expected_counts(df, label_col="n_agents"):
         n_agents = int(g_all["n_agents"].iloc[0])
         for _, t in tg.iterrows():
             yr, lo = int(t.Year), int(t["start age"])
-            sex = "f" if t.Gender == 0 else "m"
+            # PHIA Gender: 0 = Male, 1 = Female. Per experiments/008 (the
+            # authoritative ingestion) and confirmed against the data -- Gender=1
+            # gives 0.101 at 15-19 in 2007, SDHS 2006-07's figure for women, with
+            # the female peak at 25-29 and the male peak a decade later. This
+            # line had the mapping inverted; see SUMMARY.md's correction note.
+            sex = "m" if t.Gender == 0 else "f"
             col = f"popagesex.n_alive_{sex}_{lo}_{lo + 5}"
             icol = f"popagesex.n_infected_{sex}_{lo}_{lo + 5}"
             g = g_all[g_all.timevec == yr]

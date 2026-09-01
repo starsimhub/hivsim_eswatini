@@ -123,17 +123,26 @@ it is written by the `size` part, which is the part that was deferred -- but
 019 computes the same quantity with the correct mapping, at these same
 high-transmission parameters:
 
-| | as reported above | corrected mapping |
+| | as reported above | corrected mapping (019, 10 seeds) |
 |---|---|---|
-| thinnest stratum | 5.1 expected infected agents | **0.71** |
+| thinnest stratum | 5.1 expected infected agents | **2.4** (2007 M 15-19) |
+| strata below 5 | 0 | **2** |
 | strata below 10 | 2 | **3** |
 
-The thinnest strata are the young male bins, where prevalence is ~2%, not the
-young female bins. So N = 10 000 leaves at least one target stratum with under
-one expected infected agent, and the "10 000 is nearly enough, 20 000 clears
-the floor" reading above does not hold. This strengthens rather than changes
-the conclusion already recorded: the population-size question is unresolved and
-blocks coverage check v3. It is 020's first job.
+The thinnest strata are the young male bins, not the young female ones: 2007 M
+15-19 carries 2.4 expected infected agents and 2007 F 60-64 carries 4.6. Two
+target rows sit below the floor of 5 that 018 reported as empty. The "10 000 is
+nearly enough, 20 000 clears the floor" reading above does not hold.
+
+Part of the reason is a model bias rather than the mapping alone: the model puts
+0.003 prevalence on 2007 M 15-19 against PHIA's 0.019, so the stratum is thin
+both because young male prevalence is genuinely low and because the model
+understates it further. That is a fit problem for the coverage check to surface,
+but it is also what makes the count floor bind.
+
+This strengthens rather than changes the conclusion already recorded: the
+population-size question is unresolved and blocks coverage check v3. It is
+020's first job.
 
 ## Acceptance
 

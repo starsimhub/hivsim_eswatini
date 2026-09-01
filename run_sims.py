@@ -22,7 +22,7 @@ FIGURES_DIR = 'figures'
 
 def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
              hiv_pars=None, network_pars=None, vmmc_class=None, hiv_class=None,
-             datafolder=None):
+             datafolder=None, art_vls_coverage='phia'):
 
     # Condom data: stisim defaults x0.5 for non-marital pairings (act-level usage
     # is roughly half of DHS-reported "ever-used at last sex"). LL pairing kept
@@ -77,7 +77,12 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
     hiv = (hiv_class or sti.HIV)(**hiv_kwargs)
 
     # Interventions
-    interventions = make_interventions(vmmc_class=vmmc_class)
+    # art_vls_coverage: viral suppression among ART initiators. Defaults to the
+    # PHIA-measured series ('phia', adopted as model-v1.2 by exp 021). Pass None
+    # for stisim's default of 1.0 -- everyone suppressed -- which is NOT
+    # neutral; see interventions.py.
+    interventions = make_interventions(vmmc_class=vmmc_class,
+                                       art_vls_coverage=art_vls_coverage)
 
     # Default analyzers
     default_analyzers = [hiv_epi()]

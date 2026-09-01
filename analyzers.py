@@ -223,3 +223,71 @@ class PopByAgeSex(ss.Analyzer):
         self.results['n_alive_total'][ti] = alive.count()
         self.results['n_infected_total'][ti] = (alive & hiv.infected).count()
         self.results['new_infections_total'][ti] = (alive & (hiv.ti_infected == ti)).count()
+
+
+class Cascade(ss.Analyzer):
+    """The 95-95-95 cascade by sex: diagnosed, on ART, virally suppressed.
+
+    Exists because `hiv.p_on_art` pools the sexes and stisim carries no result
+    at all for the `on_effective_art` / `on_nonsuppressive_art` split, so the
+    model's *population* viral suppression -- the headline PHIA indicator -- is
+    not observable from the standard outputs.
+
+    That split matters more than it looks: suppressed agents transmit at
+    `effective_art_efficacy` = 0.99 and unsuppressed ones at
+    `nonsupp_art_efficacy` = 0.35, a 65x difference in residual transmission.
+
+    Two age ranges: 15-49 to match PHIA's headline tables, and 15+ for the
+    all-adult figures those tables also report.
+
+    `p_vls` is suppression among all PLHIV (the PHIA indicator, an *outcome* of
+    coverage x suppression). `p_vls_given_art` is suppression among the treated
+    (the `sti.ART(vls_coverage=...)` *input*). Conflating them double-counts the
+    coverage ramp -- see vls_construction.py.
+
+    Added by exp 021.
+    """
+
+    def __init__(self, *args, name='cascade', **kwargs):
+        super().__init__(*args, **kwargs)
+        self.name = name
+
+    RANGES = {'15_49': (15, 50), '15plus': (15, 200)}
+
+    def init_results(self):
+        super().init_results()
+        res = []
+        for rng in self.RANGES:
+            for sex in ('f', 'm', 'all'):
+                for stem, dtype, scale in (
+                        ('n_infected', int, True), ('n_on_art', int, True),
+                        ('n_effective_art', int, True),
+                        ('n_nonsupp_art', int, True),
+                        ('p_on_art', float, False), ('p_vls', float, False),
+                        ('p_vls_given_art', float, False)):
+                    res.append(ss.Result(f'{stem}_{sex}_{rng}', dtype=dtype,
+                                         scale=scale))
+        self.define_results(*res)
+        return
+
+    def step(self):
+        sim, ti = self.sim, self.ti
+        ppl, hiv = sim.people, sim.diseases.hiv
+        for rng, (lo, hi) in self.RANGES.items():
+            in_age = ppl.alive & (ppl.age >= lo) & (ppl.age < hi)
+            for sex, sex_bool in (('f', ppl.female), ('m', ppl.male),
+                                  ('all', np.ones(len(ppl), dtype=bool))):
+                base = in_age & sex_bool
+                inf = (base & hiv.infected).count()
+                art = (base & hiv.on_art).count()
+                eff = (base & hiv.on_effective_art).count()
+                nsp = (base & hiv.on_nonsuppressive_art).count()
+                r = self.results
+                r[f'n_infected_{sex}_{rng}'][ti] = inf
+                r[f'n_on_art_{sex}_{rng}'][ti] = art
+                r[f'n_effective_art_{sex}_{rng}'][ti] = eff
+                r[f'n_nonsupp_art_{sex}_{rng}'][ti] = nsp
+                r[f'p_on_art_{sex}_{rng}'][ti] = art / inf if inf else np.nan
+                r[f'p_vls_{sex}_{rng}'][ti] = eff / inf if inf else np.nan
+                r[f'p_vls_given_art_{sex}_{rng}'][ti] = eff / art if art else np.nan
+        return

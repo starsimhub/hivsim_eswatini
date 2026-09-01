@@ -86,7 +86,7 @@ def _normalize_age_bin_format(df):
     return df
 
 
-def make_interventions(vmmc_class=None):
+def make_interventions(vmmc_class=None, art_vls_coverage='phia'):
     # Upstream sti.VMMC gained prevalence/stock-target semantics in stisim 1.5.9
     # -- the behaviour the in-repo VMMCPrevalenceTarget subclass existed to
     # supply. Exp 017 confirmed the two are behaviourally identical (circumcision
@@ -97,7 +97,31 @@ def make_interventions(vmmc_class=None):
     art_data = _normalize_age_bin_format(pd.read_csv('data/art_coverage.csv'))
     vmmc_data = _normalize_age_bin_format(pd.read_csv('data/vmmc_coverage.csv'))
     tests = get_testing_products()
-    art = sti.ART(coverage=art_data)
+
+    # art_vls_coverage: fraction of ART initiators achieving viral suppression.
+    # Defaults to 'phia' -- the measured series from vls_construction.py (SHIMS2
+    # Table 9.3.A, SHIMS3 Table 8.1), adopted as model-v1.2 by exp 021.
+    #
+    # Passing None does NOT mean "no VLS adjustment": stisim then defaults to
+    # 1.0, i.e. every treated agent is virally suppressed, transmitting at
+    # effective_art_efficacy = 0.99 instead of nonsupp_art_efficacy = 0.35 -- a
+    # 65x difference in residual transmission. Exp 021 measured that default as
+    # overstating population viral suppression by 8.8 percentage points in 2016.
+    # None is retained only so 021's control arm stays reproducible.
+    if isinstance(art_vls_coverage, str):
+        if art_vls_coverage != 'phia':
+            raise ValueError(f"art_vls_coverage must be 'phia', None, or a "
+                             f"coverage object; got {art_vls_coverage!r}")
+        # Imported lazily: only needed when the default is used, and it keeps
+        # interventions.py importable without the survey transcription.
+        from vls_construction import build, to_vls_coverage
+        # fill_back_to: no measurement exists before SHIMS2 (2016), so
+        # suppression among the treated is held flat back to the model start.
+        # Early-ART-era suppression was plausibly worse, so this understates the
+        # correction rather than overstating it. Recorded in 021's config.
+        art_vls_coverage = to_vls_coverage(build(), fill_back_to=1985)
+
+    art = sti.ART(coverage=art_data, vls_coverage=art_vls_coverage)
     vmmc = vmmc_class(coverage=vmmc_data)
 
     # NO PrEP. `sti.Prep()` with coverage=None does not mean "off" -- both 1.5.8

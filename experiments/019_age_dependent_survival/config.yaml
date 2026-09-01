@@ -1,0 +1,178 @@
+# Experiment 019 — Age-dependent untreated survival
+#
+# Four arms at fixed parameters and seeds, varying only a multiplier on
+# dur_latent as a function of age at infection. The lineage of 015/016/017/018:
+# one thing changes, seeds held, effect sizes read off z-scores.
+
+experiment: 019_age_dependent_survival
+question: >
+  Is the flat, sex- and age-neutral 13.1 y untreated survival the missing
+  ~3 900 AIDS deaths/year? And is the problem the level, the absence of an age
+  gradient, or neither?
+
+environment:
+  model_tag: model-v1.1
+  model_tag_status: >
+    NOT YET TAGGED. 018 defines model-v1.1 but its PR had not merged when this
+    ran, so the tag cannot point at a commit on main. This experiment ran from
+    exp/018-adopt-and-size at c4cbf7b, which is the adoption plus 018's sex
+    mapping fix. Tag model-v1.1 on the merge commit and this experiment is
+    retroactively valid against it -- the tree is identical.
+  repo_commit: c4cbf7b
+  repo_branch: exp/018-adopt-and-size
+  stisim: 1.5.11        # commit 97b8bc1
+  starsim: 3.5.2        # commit ceddb877
+  python: "3.14"        # local laptop
+
+# --- Design ------------------------------------------------------------------
+
+design:
+  implementation: >
+    hiv_survival.AgeDependentSurvival, an in-repo sti.HIV subclass injected via
+    make_sim(hiv_class=...). Overrides set_prognoses() to rescale the latent
+    interval by age at infection, preserving the drawn dur_falling so the CD4
+    decline rate -- and hence rel_trans_falling, the 8x late-infection
+    transmissibility -- is unchanged. In-repo, not a patch to the editable
+    stisim checkout, so a git pull cannot wipe it (see exp 015).
+  no_op_property: >
+    The rescaling consumes no random numbers -- it rescales intervals already
+    drawn by super() -- so arm A is BIT-IDENTICAL to upstream sti.HIV at the
+    same seed. Verified: hiv.new_deaths, hiv.prevalence_15_49 and
+    hiv.n_infected all np.allclose to an unmodified run. The instrumentation is
+    therefore free.
+  under_15s: >
+    Never rescaled, in any arm. The ALPHA estimates are for adult
+    seroconverters; vertically infected infants have a different natural
+    history (real untreated survival ~2 y, which stisim already overstates
+    badly). Out of scope for 019 and not silently bundled in. Because the
+    exclusion is identical across arms, arm-to-arm contrasts are unaffected.
+
+  age_bands: [[15, 25], [25, 35], [35, 45], [45, 200]]   # left-closed, ALPHA's
+  arms:
+    A_flat_13:
+      latent_mult: 1.0
+      isolates: baseline (= upstream exactly)
+    B_flat_11.5:
+      latent_mult: 0.84
+      isolates: LEVEL (A->B), at zero gradient
+    C_grad_mild:
+      latent_mult: [0.89, 0.84, 0.73, 0.61]
+      isolates: gradient at half strength
+    D_grad_alpha:
+      latent_mult: [0.94, 0.84, 0.64, 0.44]
+      isolates: GRADIENT (B->D), full ALPHA, at constant level
+  design_point: >
+    A flat 0.84 gives ~11.5 y for everyone, approximately the population mean
+    of the ALPHA gradient once weighted by the model's age-at-infection
+    distribution. So B, C and D sit at the same level and differ only in shape.
+    Realized mean survival is measured per arm (metric 3) rather than assumed,
+    since the age distribution of incident infections is endogenous and shifts
+    between arms. Measured: B 10.02, C 9.97, D 9.88 y -- the level match held.
+
+# --- Run configuration -------------------------------------------------------
+
+run:
+  n_agents: 10000
+  start: 1985
+  stop: 2026
+  n_seeds: 10
+  n_seeds_source: >
+    018 obs 5 -- CV is 4.4% at this parameter point on model-v1.1, at the 3-5
+    boundary of the standard replicate bands, so 10 is comfortable. NB 019's
+    README cited 017's CV ~47% as the reason to use high-transmission only;
+    018 obs 4 showed that figure was the 1.5.8 stack (arm A), not this one.
+  param_set:
+    beta_m2f: 0.0139
+    rel_init_prev: 0.49
+  param_set_rationale: >
+    High-transmission only. This experiment is entirely about effect sizes, so
+    the lower-variance point is the right one, and it is the same point
+    016/017/018 used -- which is what makes arm A's 64.3% directly comparable
+    to 018 obs 7's 64%.
+  resume: per-sim parquet in outputs/sims/; a cell whose file exists is skipped.
+
+# --- Metrics ------------------------------------------------------------------
+
+metrics:
+  1_routes:
+    what: deaths via ti_zero vs via p_hiv_death
+    why: >
+      Gates the interpretation of everything else. The ~80/20 split in 017 obs 7
+      was integrated from the hazard table, never measured. Needed a new
+      instrument: hiv.new_deaths pools the routes, and upstream step_die()
+      clears ti_zero and ti_infected, so the route is unrecoverable after the
+      fact. AgeDependentSurvival.step_die() reads it before calling super().
+    tie_break: >
+      Upstream sets ti_dead from the Bernoulli hazard first, then overwrites it
+      for anyone whose ti_zero has arrived, so an agent can satisfy both routes
+      on one step. Ties go to progression -- those agents were scheduled to die
+      regardless of the coin flip.
+    measured: 70.5% (arm A) to 73.9% (arm D) via ti_zero
+  2_deaths_vs_unaids:
+    target: data/eswatini_hiv_calib.csv, column hiv.new_deaths
+    note: NOT data/eswatini_deaths.csv -- that is background mortality rates
+    baseline: 017 arm C / 018 at 64% of the UNAIDS peak
+    measured: A 64.3%, B 73.8%, C 78.2%, D 78.1%
+  3_survival:
+    what: realized time from ti_infected to death, by age at infection
+    censoring: >
+      Restricted to infections up to 2000 so the 2026 window is not
+      right-censored. Without the restriction a truncated run reported 10.0 y
+      for an arm whose nominal mean is 13.1 y, purely because only fast
+      progressors had died.
+  4_deaths_by_age:
+    target: ../016_double_counted_mortality/outputs/excess_deaths_by_age_sex.csv
+    why: >
+      016's implied AIDS deaths by age band, reconstructed from all-cause
+      mortality with no HIV information as input. An independent
+      age-stratified target the model had never been compared against. It puts
+      11 110 at 2005 against UNAIDS' 11 000 -- agreement within 1%.
+  5_prevalence:
+    target: calibration_data/prevalence_by_age_sex.csv    # 54 rows, PHIA
+    gender_coding: >
+      0 = Male, 1 = Female. Per experiments/008 (authoritative ingestion) and
+      confirmed against the data: Gender=1 gives 0.101 at 15-19 in 2007, SDHS
+      2006-07's figure for women, with the female peak at 25-29 and the male
+      peak a decade later. experiments/018/run.py:144 had this inverted; fixed
+      in c4cbf7b with a correction note in 018's SUMMARY.
+    why: >
+      The cost side. Shortening survival removes PLHIV, so prevalence falls --
+      against the direction 014's coverage gap needs.
+  6_population: demographic sanity check
+
+# --- Known analysis bugs, found and fixed here -------------------------------
+
+analysis_bugs_fixed:
+  year_binning: >
+    Deaths were binned by round() rather than floor(), straddling calendar-year
+    boundaries and inflating late-epidemic counts ~35%.
+  missing_zeros: >
+    Per-seed means were taken over only the seeds with a death in a given
+    (year, sex, age) cell rather than over all 10. Combined with the binning
+    bug this manufactured an apparent EXCESS of model deaths in 2020 (ratio
+    1.4) where the truth is a deficit (0.7) -- a sign error in metric 4's
+    headline. Death-log totals now reconcile with the hiv.new_deaths trajectory
+    to a constant 1.05x across all years.
+
+# --- Scope --------------------------------------------------------------------
+
+not_in_scope:
+  - The p_hiv_death hazard table itself. Metric 1 confirms it is the minor
+    route (~27%), corroborating 014's rho = 0.11 for mort_mult.
+  - Sex differences in survival. rel_death_f was refuted by 017 arm D, and it
+    acts on the minor route anyway.
+  - On-ART survival. 017 obs 8 established on-ART mortality is inert by
+    construction, and untreated survival is the prior question.
+  - Any calibration run, or prior bounds -- parameter-engineering (021).
+
+open_question_resolved: >
+  The README asked whether to scale total survival (acute + latent + falling)
+  rather than latency alone. Left as latency-only, and metric 2's C = D result
+  argues it was the right call: the gradient saturates well before ALPHA's full
+  steepness, so there is no unexplained headroom that a more aggressive
+  rescaling would obviously recover.
+
+compute:
+  host: local laptop (C:\Python314\python.exe)
+  n_sims: 40
+  runtime: ~93 s per sim; 40 sims in ~13 min wall on all cores

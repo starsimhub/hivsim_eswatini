@@ -141,6 +141,21 @@ deliberate and recorded here, not in the directory layout.
 
 ## Workflow notes
 
+- **Every experiment produces the standard prevalence-fit figure.** Call
+  `standard_figures.plot_prevalence_fit(df, label, outdir/'prevalence_fit_vs_phia.png')`
+  from `run.py`. It is one shared implementation, so the figure cannot
+  drift between experiments — which is exactly what happened before:
+  `plot_dashboard.py` produced `dashboard_fit_*.png` for 003–015, then
+  broke at 016 because it runs its own sims and could not consume an
+  A/B harness's output. 016, 017, 018 and 020 ended up with no
+  prevalence-fit figure at all, and 019/021 grew a second incompatible
+  format. `plot_fit_progression.py` retrofits the standard figure onto
+  past experiments where outputs survive, and calls the same function.
+- **Save what the figure needs.** The `analyzers.PopByAgeSex` analyzer
+  must be in the analyzer list, and `n_infected_*` per band must survive
+  the `KEEP` column filter. 016 and 017 kept `n_alive` per band but only
+  *aggregate* infected, so their age-stratified fit is permanently
+  unrecoverable.
 - Each calibration experiment gets `README.md` (question + plan) before
   any code runs, and `SUMMARY.md` (findings + decisions) before opening
   the next.

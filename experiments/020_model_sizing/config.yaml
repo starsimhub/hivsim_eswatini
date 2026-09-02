@@ -1,0 +1,120 @@
+# Experiment 020 — Model sizing: population, replicates, rare-event floor
+#
+# The sweep deferred three times (016 -> 017 -> 018). Run against a fixed
+# model-v1.1, and extended beyond 018's plan with a low-transmission arm, which
+# is what turned the result from a confirmation into a finding.
+
+experiment: 020_model_sizing
+question: >
+  How large must the model be, and how many replicates per parameter set, for a
+  coverage check to mean anything? Does N=10,000 clear the rare-event floor at
+  the PHIA target strata, and how do run time and memory scale with N?
+
+environment:
+  model_tag: model-v1.1
+  model_tag_status: >
+    NOT YET TAGGED -- 018's PR had not merged when this ran. Ran from
+    exp/019-age-dependent-survival (= exp/018 plus 019). The VLS default flip
+    from 021 landed AFTER this experiment's sims, so 020 ran with
+    vls_coverage=None (stisim's 1.0). Immaterial here: 021 measured the VLS
+    effect on prevalence at +1.6% (z = 1.03), far below the factor-of-2
+    differences this experiment is about.
+  stisim: 1.5.11        # commit 97b8bc1
+  starsim: 3.5.2        # commit ceddb877
+  python: "3.14"
+
+# --- What 018 got wrong, and why this needed rerunning -----------------------
+
+motivation:
+  018_estimate_was_wrong_twice:
+    sex_mapping: >
+      018/run.py:144 read `"f" if Gender == 0`, pairing model male counts with
+      female target rows. Correct coding is 0 = Male, 1 = Female (per 008, and
+      confirmed against SDHS 2006-07: Gender=1 gives 0.101 at 15-19 in 2007,
+      the figure for women). Fixed in c4cbf7b with a correction note in 018's
+      SUMMARY.
+    high_transmission_only: >
+      018 computed the floor at prevalence ~0.22. Every stratum count scales
+      with prevalence, so a prior exploring beta_m2f = 0.008 spends much of its
+      time where the floor binds. THIS is the case that decides N, and 018 never
+      ran it. Added here as a second arm.
+
+# --- Design ------------------------------------------------------------------
+
+design:
+  part_a_population:
+    n_agents: [5000, 10000, 20000, 50000]
+    n_seeds: 10
+    param_sets:
+      high_transmission: {beta_m2f: 0.0139, rel_init_prev: 0.49}   # continuity with 016-019
+      low_transmission:  {beta_m2f: 0.008,  rel_init_prev: 0.2}    # just above 018's establishment threshold
+    measures: [expected infected agents per PHIA stratum, between-seed CV,
+               wall time, peak RSS]
+  part_b_replicates:
+    n_agents: 10000
+    n_seeds: 10
+    points:
+      plausible:        {beta_m2f: 0.0139, rel_init_prev: 0.49}
+      low_transmission: {beta_m2f: 0.008,  rel_init_prev: 0.2}
+      default:          {beta_m2f: 0.01,   rel_init_prev: 0.2}
+    bands: {"<5%": "3-5", "5-20%": "10-20", ">20%": "50+ or increase N"}
+
+  compute_constraint: >
+    12 logical cores but only ~6 GB RAM free of 34, and peak RSS above N=10,000
+    was unmeasured. Part A therefore ran N groups sequentially under a worker cap
+    falling with N (10/8/4/3) and recorded peak RSS per sim. Every cell writes
+    its own parquet, so an OOM would have cost only the cells in flight.
+
+  gender_coding: 0 = Male, 1 = Female   # prevalence_by_age_sex.csv; opposite of stisim's
+
+# --- Results ------------------------------------------------------------------
+
+results:
+  floor:
+    n50000_low_transmission: "min 3.33 expected agents; 2 of 54 strata below 5"
+    n20000_high_transmission: "min 5.87; 0 below 5"
+    n10000_low_transmission: "min 0.40; 5 below 5"
+    persistent_thin_stratum: 2007 M 15-19
+    interpretation: >
+      The floor is NOT cleared at low transmission by any feasible N. 10k -> 50k
+      (5x agents) raises the minimum 0.40 -> 3.33 and still misses 5. The reason
+      is a fit error: the model puts 0.003 on 2007 M 15-19 against PHIA's 0.019,
+      a -65% relative miss. Past N=20,000, more agents mostly buy precision on a
+      bias. The floor problem and the age-shape problem are the same problem.
+  cv:
+    high_transmission: {5000: 0.094, 10000: 0.044, 20000: 0.025, 50000: 0.019}
+    low_transmission:  {5000: 0.244, 10000: 0.129, 20000: 0.078, 50000: 0.043}
+    note: >
+      sigma ~ N^-0.66 at the low-transmission point, slightly better than the
+      Poisson N^-0.5. So for fixed precision on a mean, cost ~ N x R is roughly
+      invariant to the split -- the case for larger N rests on the floor, not on
+      variance.
+  memory:
+    peak_rss_mb: {5000: 470, 10000: 632, 20000: 871, 50000: 1291}
+    model: ~400 MB fixed overhead + ~20 MB per 1,000 agents (sub-linear)
+    implication: four concurrent N=50,000 sims fit in ~6 GB; the cap of 3 was conservative
+
+failures:
+  runtime_scaling_not_measured: >
+    DESIGN FAILURE. The worker cap falling with N confounds wall time with
+    contention, so the observed 134/273/182/302 s is noise, not a scaling curve,
+    and cannot size a history-matching wave. Needs a serial or fixed-worker
+    re-run at two or three values of N. Memory, CV and floor results are
+    unaffected -- peak RSS is per-process and CV is computed within an N group.
+
+acceptance:
+  recommendation: coverage check v3 at N = 20,000 with 10 replicates
+  thin_strata_must_be_declared: >
+    2007 M 15-19 and 2007 F 60-64 do not resolve at any feasible N. Excluding or
+    down-weighting them is the honest move and must be stated as a limitation. A
+    coverage fraction computed over strata the model cannot resolve is not a
+    measure of the model.
+  on_a_vm: >
+    N = 50,000 with 5 replicates costs about the same as N = 20,000 with 10-20
+    and is strictly better on the floor. On the laptop, N = 20,000 is pragmatic.
+
+compute:
+  host: local laptop (C:\Python314\python.exe)
+  n_sims: 110    # 80 size + 30 repl
+  wall_time: ~2.5 h across two background runs
+  resume: per-cell parquet in outputs/sims/; a cell whose file exists is skipped

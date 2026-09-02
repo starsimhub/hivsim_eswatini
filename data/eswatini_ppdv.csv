@@ -1,0 +1,7 @@
+Year,AgeCat,sex,Gender,Prev,Prev_lb,Prev_ub,VLS,VLS_lb,VLS_ub,ppdv,ppdv_lb,ppdv_ub,Inc,Inc_lb,Inc_ub,ART_prev,ART_prev_lb,ART_prev_ub,art_prev_convention
+2021,15-49,f,1,0.316,0.298,0.334,0.886,0.87,0.902,0.036024,0.029204,0.03874,1.45,0.69,2.2,,,,INDETERMINATE - do not use without checking
+2021,15-49,m,0,0.156,0.143,0.169,0.824,0.793,0.855,0.027456,0.020735,0.029601,0.2,0.0,0.48,,,,INDETERMINATE - do not use without checking
+2016,15-49,f,1,0.343,0.326,0.36,0.74784,0.726192,0.769488,0.08649088,0.075146912,0.089261408,1.73,0.96,2.5,,,,INDETERMINATE - do not use without checking
+2016,15-49,m,0,0.189,0.173,0.204,0.623272,0.59469,0.650932,0.071201592,0.060388764,0.07011863,0.85,0.21,1.49,,,,INDETERMINATE - do not use without checking
+2011,18-49,f,1,0.39,0.38038622,0.399656,0.306,,,0.27066,,,3.14,2.63,3.74,0.34,,,INDETERMINATE - do not use without checking
+2011,18-49,m,0,0.24,0.230888058,0.24923,0.297,,,0.16872,,,1.65,1.28,2.11,0.33,,,INDETERMINATE - do not use without checking

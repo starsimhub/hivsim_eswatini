@@ -266,6 +266,13 @@ def plot_prevalence_fit(df, label, outpath, kind="arm", tg=None, stamp=None):
                 label=f"PHIA {SEX_LABEL[sex]}")
     ax.set(title="Prevalence 15-49 by sex (this resolution exists for every "
                  "experiment)", xlabel="year", ylabel="prevalence 15-49")
+    # Origin at zero: with an auto-scaled axis a 4-point gap on a 0.30 baseline
+    # fills half the panel and reads as a catastrophic miss. Anchoring at 0 shows
+    # the gap against the quantity's actual magnitude.
+    if len(agg):
+        top = max(agg.model.max() + agg.model_sd.fillna(0).max(),
+                  agg.phia.max()) * 1.15
+        ax.set_ylim(0, top)
     ax.grid(alpha=0.3)
     ax.legend(fontsize=8, ncol=2)
 
@@ -298,7 +305,8 @@ def plot_prevalence_fit(df, label, outpath, kind="arm", tg=None, stamp=None):
     title = f"{label} — prevalence vs PHIA     band = {band_lbl}"
     if stamp:
         title += f"\n({stamp})"
-    fig.suptitle(title, y=0.995, fontsize=12)
+    # Push the suptitle clear of the axes title in the collapsed one-row layout
+    fig.suptitle(title, y=1.06 if not has_bands else 0.995, fontsize=12)
     fig.savefig(outpath, dpi=130, bbox_inches="tight")
     plt.close(fig)
     return sc

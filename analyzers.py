@@ -200,6 +200,13 @@ class PopByAgeSex(ss.Analyzer):
             for lo, hi in self.AGE_BINS:
                 res.append(ss.Result(f'n_alive_{sex}_{lo}_{hi}', dtype=int, scale=True))
                 res.append(ss.Result(f'n_infected_{sex}_{lo}_{hi}', dtype=int, scale=True))
+                # Added by exp 023: incidence by age band needs a numerator.
+                # hiv_epi carries incidence only as 15-49 and 18-49 aggregates
+                # by sex, but the SHIMS2 incidence targets are 5- and 10-year
+                # bands. Denominator is n_alive - n_infected (HIV has no
+                # recovered class, so that is the susceptible stock).
+                res.append(ss.Result(f'new_infections_{sex}_{lo}_{hi}',
+                                     dtype=int, scale=True))
             res.append(ss.Result(f'prevalence_{sex}_15_49', dtype=float, scale=False))
         res.append(ss.Result('n_alive_total', dtype=int, scale=True))
         res.append(ss.Result('n_infected_total', dtype=int, scale=True))
@@ -216,6 +223,8 @@ class PopByAgeSex(ss.Analyzer):
                 in_bin = alive & sex_bool & (ppl.age >= lo) & (ppl.age < hi)
                 self.results[f'n_alive_{sex}_{lo}_{hi}'][ti] = in_bin.count()
                 self.results[f'n_infected_{sex}_{lo}_{hi}'][ti] = (in_bin & hiv.infected).count()
+                self.results[f'new_infections_{sex}_{lo}_{hi}'][ti] = (
+                    in_bin & (hiv.ti_infected == ti)).count()
             adults = alive & sex_bool & (ppl.age >= 15) & (ppl.age < 50)
             if adults.count() > 0:
                 self.results[f'prevalence_{sex}_15_49'][ti] = float(np.mean(hiv.infected[adults]))

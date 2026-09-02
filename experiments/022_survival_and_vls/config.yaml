@@ -1,0 +1,169 @@
+# Experiment 022 — Pivoting survival gradient x suppression as a stock target
+#
+# 2 x 2 factorial, fixed parameters and seeds. Intended as the last experiment
+# before calibration; 023 is parameter engineering, 024 is coverage check v3.
+
+experiment: 022_survival_and_vls
+question: >
+  Does a PIVOTING age gradient on untreated survival -- longer at young ages,
+  shorter at old, as EMOD parameterises it -- fix the age-shape defect that six
+  previous experiments could not? And can viral suppression improve for people
+  already on ART, so a regimen change like the TLD transition is representable?
+
+environment:
+  model_tag: model-v1.2 + two ART input fixes
+  model_tag_status: >
+    model-v1.1 STILL NOT TAGGED -- 018's PR has not merged, so the whole
+    018/019/021/020/022 chain runs from branches. Ran from
+    exp/022-survival-and-vls at f67561b.
+  stisim: 1.5.11        # commit 97b8bc1
+  starsim: 3.5.2        # commit ceddb877
+  python: "3.14"
+
+# --- Provenance: the researcher's own prior model ----------------------------
+
+prompted_by:
+  source: >
+    Akullian A, Morrison M, Garnett GP, et al. The effect of 90-90-90 on HIV-1
+    incidence and mortality in eSwatini: a mathematical modelling study.
+    Lancet HIV 2020. Supplementary appendix at external_data/mmc1.pdf.
+  what_it_supplied:
+    survival: >
+      Table A2: HIV_Adult_Survival_Scale_Parameter_Intercept 21.182,
+      _Slope -0.2717, Shape 2. So lambda = 21.182 - 0.2717*age_at_infection and
+      mean survival = lambda*Gamma(1.5): 13.96 y at 20, 11.55 at 30, 9.14 at 40,
+      6.73 at 50. Against stisim's flat 13.1 y this PIVOTS.
+    art_suppression: >
+      ART_Viral_Suppression_Multiplier = 0.08, a single average multiplier on
+      infectivity for everyone on ART. stisim with VLS ~0.91 implies
+      0.91*0.01 + 0.09*0.65 = 0.068 -- close, which independently supports 021's
+      adoption of a suppression gap.
+    susceptibility: >
+      Male_To_Female_Relative_Infectivity_Multiplier_Young 4.894, _Old 2.844.
+      Ratio 1.72, which is where this model's rel_sus_age of 1.7 came from, but
+      at levels ~1.4x below this model's implied 6.8 (<25) and 4.0 (>=25).
+      Reconciling that is 023, not here.
+    art_coverage: >
+      NOT supplied as data. That model FITTED coverage via
+      ART_Link_Max/Mid/Rate and compared emergent coverage against a 15-49
+      aggregate. Checked because art_coverage.csv's origin was unknown.
+    prevalence: >
+      Table A1 IS calibration_data/prevalence_by_age_sex.csv -- 2007 Male 15-20,
+      count 1272, prevalence 1.9% matches row one exactly. Independent
+      confirmation that Gender 0 = Male in that file.
+
+# --- Design ------------------------------------------------------------------
+
+design:
+  factorial: 2 x 2
+  arms:
+    A_base:  {survival: A_flat_13,   vls: flow only,    role: "model-v1.2, control"}
+    B_pivot: {survival: E_grad_emod, vls: flow only,    role: "the survival pivot"}
+    C_stock: {survival: A_flat_13,   vls: stock target, role: "the capability"}
+    D_both:  {survival: E_grad_emod, vls: stock target, role: "interaction"}
+  why_factorial: >
+    The two changes could interact: shortening late-life survival removes
+    treated patients, which changes the treated stock the suppression target
+    acts on. Measured -- it does not (D differs from B by 0.0001 MAE).
+
+  survival_multipliers:
+    bands: [[15, 25], [25, 35], [35, 45], [45, 200]]
+    E_grad_emod: [1.086, 0.845, 0.604, 0.363]
+    derivation: "mult = (EMOD mean at band midpoint - 3.14) / 10, where 3.14 y
+      is stisim's non-latent portion (dur_acute 1.7 mo + dur_falling 3 y) and 10
+      y is the dur_latent mean"
+    contrast_with_019: >
+      019 arm D was 0.94/0.84/0.64/0.44 -- every 019 arm had multipliers <= 1.0,
+      so all four SHORTENED survival at every age. That is why 019's conclusion
+      about age gradients was drawn from too narrow a family.
+
+  vls_stock_target:
+    implementation: vls_stock_target.VLSStockTarget, an in-repo ss.Intervention
+    the_gap: >
+      sti.ART(vls_coverage=...) accepts a time-varying series but applies it only
+      at initiation -- on_effective_art is written in start_art() and cleared
+      only on death or ART discontinuation. So better regimens or adherence
+      support cannot reach existing patients, who by 2021 are most of the
+      treated population.
+    mechanism: >
+      Each step, agents on ART are ranked by a persistent per-agent
+      suppression_propensity and the top target*n are marked suppressed. Ranking
+      by a persistent score rather than redrawing means a rising target ADDS to
+      the suppressed pool instead of reshuffling it, and reads as a plausible
+      individual trait. Mirrors sti.VMMC's willingness, and the same
+      stock-vs-hazard fix exp 015 applied to VMMC.
+    precedent: exp 015 (VMMCPrevalenceTarget)
+
+run:
+  n_agents: 10000
+  start: 1985
+  stop: 2026
+  n_seeds: 10          # 018 obs 5: CV 4.4% at this parameter point
+  param_set: {beta_m2f: 0.0139, rel_init_prev: 0.49}
+  n_sims: 40
+
+# --- Input fixes made in this experiment -------------------------------------
+
+input_fixes:
+  art_coverage_2016_men_15_24:
+    was: 0.360
+    now: 0.556
+    traced_to: >
+      SHIMS2 Table 8.3.A's 20-24 row (self-reported on ART 34.6%, n = 29,
+      parenthesised by the report), applied to the whole [15,25) band. The
+      published Total 15-24 self-report figure is 46.8% -- men 15-19 are at
+      59.5% and pull the band up.
+    why_0_556: >
+      Every other cell in the file is on the biomarker basis: deriving each 2016
+      cell from SHIMS2 Table 10.3.B as diagnosed x on-ART-among-diagnosed
+      reproduces men 35-49 at 0.762 exactly, and five of six cells sit within
+      ~5 points of their derived value. This one was off by 20.
+    measured_effect: "MAE 0.0586 -> 0.0584 against 021 arm B. Inert (obs 7)."
+  art_coverage_2021_45plus:
+    was: "0.970 / 0.902 (copies of [35,45))"
+    now: "0.966 / 0.953 (SHIMS3 Table 9.1.A, 50+ band)"
+    note: >
+      2011 and 2016 keep the copy and are flagged EXTRAPOLATED; neither round
+      publishes a 50+ ART band.
+  vls_basis:
+    change: "SHIMS2 Table 9.3.A (self-report, 15+) -> Table 10.3.B (biomarker, 15+)"
+    effect: "under 1 point; a consistency tidy with SHIMS3, not a correction"
+    agent_error_corrected: >
+      An earlier claim that the two bases differed by ~4 points was an
+      age-range error: it compared SHIMS2's 15-49 biomarker figure against its
+      15+ self-report figure. The same mistake was made once before in this
+      project's data work; both are recorded so the pattern is visible.
+
+metrics:
+  1_bias_by_band: "prevalence bias by sex x age band -- the decomposition MAE hides"
+  2_deaths: {target: "data/eswatini_hiv_calib.csv, hiv.new_deaths", peak: 11000, year: 2004}
+  3_survival: "realized untreated survival by age at infection, infections <= 2000"
+  4_cascade: "population VLS and suppression-given-ART vs input and PHIA (analyzers.Cascade)"
+  standard_figure: standard_figures.plot_prevalence_fit, one per arm
+
+results:
+  scorecard:
+    A_base:  {mae: 0.0584, bias: -0.0396, within_ci: 23}
+    B_pivot: {mae: 0.0817, bias: -0.0661, within_ci: 9}
+    C_stock: {mae: 0.0586, bias: -0.0401, within_ci: 22}
+    D_both:  {mae: 0.0818, bias: -0.0663, within_ci: 8}
+  deaths_pct_of_unaids_peak: {A_base: 64.3, B_pivot: 73.3, C_stock: 64.3, D_both: 73.3}
+  verdict: >
+    Pivot rejected -- destroys the 45-64 fit (bias -0.004 -> -0.088 women,
+    -0.043 -> -0.120 men) and leaves the young-age deficit untouched. Stock
+    target adopted -- tracks its input to four decimals at 2021 where flow-only
+    lags 1.8 points, at no cost to the fit.
+
+not_in_scope:
+  - rel_sus_age and rel_beta_f2m. Opening them alongside the survival pivot
+    would confound two age-shape mechanisms. That is 023.
+  - The VLS definitional basis as an experimental arm -- checked, sub-point, dropped.
+  - Any calibration run.
+
+compute:
+  host: local laptop (C:\Python314\python.exe)
+  runtime: ~15 min wall for 40 sims
+  archived: >
+    outputs_pre_art_fix/ holds the identical factorial on the old ART value.
+    The run completed before it could be cancelled; archived rather than
+    deleted, and not analysed beyond obs 7's comparison against 021 arm B.

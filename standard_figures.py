@@ -117,7 +117,10 @@ def fit_by_stratum(df, kind="arm", tg=None):
         if kind == "ensemble":
             centre, lo_b, hi_b = s.median(), s.quantile(0.05), s.quantile(0.95)
         else:
+            # ddof=1 is NaN for a single seed; a zero-width band is the honest
+            # rendering there, and it keeps single-seed smoke tests plottable.
             sd = s.std(ddof=1)
+            sd = 0.0 if not np.isfinite(sd) else sd
             centre, lo_b, hi_b = s.mean(), s.mean() - sd, s.mean() + sd
         rows.append(dict(year=int(t.year), sex=t.sex, age_low=int(t.age_low),
                          model=centre, model_lo=lo_b, model_hi=hi_b,
@@ -227,7 +230,9 @@ def plot_prevalence_fit(df, label, outpath, kind="arm", tg=None, stamp=None):
 
     # Rows 0-1: age-stratified, women then men
     if len(st):
-        ymax = max(st.model_hi.max(), st.phia_ub.max()) * 1.05
+        ymax = float(np.nanmax([st.model_hi.max(), st.phia_ub.max()])) * 1.05
+        if not np.isfinite(ymax) or ymax <= 0:
+            ymax = 1.0
         for i, sex in enumerate(("f", "m")):
             for j, yr in enumerate(years):
                 ax = fig.add_subplot(gs[i, j])
@@ -270,9 +275,10 @@ def plot_prevalence_fit(df, label, outpath, kind="arm", tg=None, stamp=None):
     # fills half the panel and reads as a catastrophic miss. Anchoring at 0 shows
     # the gap against the quantity's actual magnitude.
     if len(agg):
-        top = max(agg.model.max() + agg.model_sd.fillna(0).max(),
-                  agg.phia.max()) * 1.15
-        ax.set_ylim(0, top)
+        top = float(np.nanmax([agg.model.max() + agg.model_sd.fillna(0).max(),
+                               agg.phia.max()])) * 1.15
+        if np.isfinite(top) and top > 0:
+            ax.set_ylim(0, top)
     ax.grid(alpha=0.3)
     ax.legend(fontsize=8, ncol=2)
 

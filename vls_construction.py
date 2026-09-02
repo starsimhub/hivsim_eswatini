@@ -111,8 +111,18 @@ PLHIV_TOTALS = {
 # SHIMS3 Table 8.1 row "Aware of HIV status and on ART" (ARV-biomarker
 # adjusted). Both are among adults 15+; neither report stratifies this row by
 # age, which is why the model input has no age dimension.
+# Biomarker-adjusted ("self-report AND/OR detectable ARV"), adults 15+, which
+# is the basis SHIMS3 leads with and the age range the model's [15,100) band
+# needs. SHIMS2 Table 10.3.B 15+ row; SHIMS3 Table 9.1.B 15+ row (identical to
+# Table 8.1's "Aware of HIV status and on ART").
+#
+# The self-report basis (SHIMS2 Table 9.3.A: m 91.3, f 92.2) differs by under a
+# point at matched 15+, so this is a consistency tidy rather than a correction.
+# Beware comparing across age ranges: SHIMS2's 15-49 biomarker figure is
+# m 87.6 / f 91.4, and reading that against the 15+ self-report numbers makes
+# the definitional gap look ~4x larger than it is.
 GIVEN_ART = {
-    (2016, "m"): (91.3, 694), (2016, "f"): (92.2, 1587),
+    (2016, "m"): (90.5, 800), (2016, "f"): (91.8, 1851),
     (2021, "m"): (96.7, 775), (2021, "f"): (95.9, 1885),
 }
 
@@ -133,7 +143,7 @@ PLHIV_10YR = {
 
 SURVEY = {2016: "SHIMS2 2016-2017", 2021: "SHIMS3 2021"}
 SRC_PLHIV = {2016: "SHIMS2 Table 9.4.A", 2021: "SHIMS3 Table 8.2"}
-SRC_ART = {2016: "SHIMS2 Table 9.3.A", 2021: "SHIMS3 Table 8.1"}
+SRC_ART = {2016: "SHIMS2 Table 10.3.B (15+)", 2021: "SHIMS3 Table 9.1.B (15+)"}
 
 
 def build():

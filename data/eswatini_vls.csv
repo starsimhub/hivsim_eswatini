@@ -51,7 +51,7 @@ year,survey,sex,age_low,age_high,measure,value,n_unweighted,small_denominator,so
 2021,SHIMS3 2021,m,55,60,vls_among_plhiv,0.892,65,False,SHIMS3 Table 8.2
 2021,SHIMS3 2021,m,60,65,vls_among_plhiv,0.9309999999999999,66,False,SHIMS3 Table 8.2
 2021,SHIMS3 2021,m,65,100,vls_among_plhiv,0.956,62,False,SHIMS3 Table 8.2
-2016,SHIMS2 2016-2017,f,15,100,vls_given_art,0.922,1587,False,SHIMS2 Table 9.3.A
-2016,SHIMS2 2016-2017,m,15,100,vls_given_art,0.9129999999999999,694,False,SHIMS2 Table 9.3.A
-2021,SHIMS3 2021,f,15,100,vls_given_art,0.9590000000000001,1885,False,SHIMS3 Table 8.1
-2021,SHIMS3 2021,m,15,100,vls_given_art,0.9670000000000001,775,False,SHIMS3 Table 8.1
+2016,SHIMS2 2016-2017,f,15,100,vls_given_art,0.9179999999999999,1851,False,SHIMS2 Table 10.3.B (15+)
+2016,SHIMS2 2016-2017,m,15,100,vls_given_art,0.905,800,False,SHIMS2 Table 10.3.B (15+)
+2021,SHIMS3 2021,f,15,100,vls_given_art,0.9590000000000001,1885,False,SHIMS3 Table 9.1.B (15+)
+2021,SHIMS3 2021,m,15,100,vls_given_art,0.9670000000000001,775,False,SHIMS3 Table 9.1.B (15+)

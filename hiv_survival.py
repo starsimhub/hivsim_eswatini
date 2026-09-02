@@ -211,4 +211,20 @@ ARMS = {
     'B_flat_11.5':  0.84,
     'C_grad_mild':  (0.89, 0.84, 0.73, 0.61),
     'D_grad_alpha': (0.94, 0.84, 0.64, 0.44),
+    # Derived from the EMOD model of Akullian et al. 2020 (Lancet HIV), whose
+    # appendix Table A2 gives age-dependent untreated survival as a Weibull with
+    # shape 2 and scale lambda = 21.182 - 0.2717 * age_at_infection. Mean
+    # survival = lambda * Gamma(1.5), so 13.96 y at age 20, 11.55 at 30, 9.14 at
+    # 40 and 6.73 at 50. Converting to a latency multiplier at the band
+    # midpoints, holding stisim's non-latent portion (dur_acute 1.7 months +
+    # dur_falling 3 y = 3.14 y) fixed:  mult = (mean - 3.14) / 10.
+    #
+    # The result PIVOTS rather than compresses: >1 at the young end, far below
+    # 1 at the old end. Every arm in exp 019 had multipliers <= 1.0, so 019
+    # tested only shortening gradients and its conclusion that a gradient is not
+    # worth a parameter was drawn from too narrow a family. A pivot pushes both
+    # of the model's prevalence defects the right way at once -- longer young
+    # survival adds prevalent infections where the model is 49-65% low, shorter
+    # old survival removes the excess where women 35-44 sit 11% high.
+    'E_grad_emod':  (1.086, 0.845, 0.604, 0.363),
 }

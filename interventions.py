@@ -86,7 +86,8 @@ def _normalize_age_bin_format(df):
     return df
 
 
-def make_interventions(vmmc_class=None, art_vls_coverage='phia'):
+def make_interventions(vmmc_class=None, art_vls_coverage='phia',
+                       vls_stock_target=True):
     # Upstream sti.VMMC gained prevalence/stock-target semantics in stisim 1.5.9
     # -- the behaviour the in-repo VMMCPrevalenceTarget subclass existed to
     # supply. Exp 017 confirmed the two are behaviourally identical (circumcision
@@ -137,6 +138,27 @@ def make_interventions(vmmc_class=None, art_vls_coverage='phia'):
         art,
         vmmc,
     ]
+
+    # Viral suppression as a stock target, adopted as model-v1.3 by exp 022.
+    #
+    # sti.ART applies vls_coverage only at initiation, so without this an agent
+    # keeps whatever suppression status they were assigned when they started
+    # treatment -- for life. Better regimens or adherence support (Eswatini's
+    # TLD transition from ~2019) then cannot reach existing patients, who by
+    # 2021 are most of the treated population. 021 measured the symptom:
+    # realized suppression lagged its own input by 1.8 points in 2021.
+    #
+    # This runs after ART, so it re-targets the stock each step. Exp 022 arm C
+    # measured it as tracking the input to four decimals at 2021, at no cost to
+    # the prevalence fit (MAE 0.0584 -> 0.0586).
+    #
+    # Pass vls_stock_target=False for flow-only semantics (022 arms A and B).
+    # Skipped when there is no coverage table to target, since stisim's default
+    # of 1.0 leaves nothing to re-target.
+    if vls_stock_target and art_vls_coverage is not None:
+        from vls_stock_target import VLSStockTarget
+        interventions = interventions + [
+            VLSStockTarget(vls_coverage=art_vls_coverage)]
 
     return interventions
 

@@ -45,7 +45,6 @@ sys.path.insert(0, str(REPO_ROOT))
 from run_sims import make_sim  # noqa: E402
 from analyzers import PopByAgeSex, Cascade  # noqa: E402
 from hiv_survival import AgeDependentSurvival, ARMS as SURV_ARMS  # noqa: E402
-from vls_stock_target import VLSStockTarget  # noqa: E402
 from vls_construction import build as vls_build, to_vls_coverage  # noqa: E402
 from standard_figures import (load_targets, plot_prevalence_fit, scorecard,
                               fit_by_stratum, fit_15_49)  # noqa: E402
@@ -85,13 +84,15 @@ def _run(arm, seed):
 
     surv_arm, use_stock = ARMS[arm]
     tbl = vls_table()
-    extra = [VLSStockTarget(vls_coverage=tbl)] if use_stock else None
+    # Explicit since exp 022 closed: VLSStockTarget became the make_sim default
+    # (model-v1.3), so leaving this implicit would give arms A and B a stock
+    # target they were defined without, and arms C and D two of them.
 
     t0 = time.perf_counter()
     sim = make_sim(seed=seed, stop=STOP, verbose=-1, hiv_pars=dict(PARS),
                    hiv_class=partial(AgeDependentSurvival,
                                      latent_mult=SURV_ARMS[surv_arm]),
-                   art_vls_coverage=tbl, extra_interventions=extra,
+                   art_vls_coverage=tbl, vls_stock_target=use_stock,
                    analyzers=[PopByAgeSex(), Cascade()])
     sim.pars.n_agents = N_AGENTS
     sim.run()

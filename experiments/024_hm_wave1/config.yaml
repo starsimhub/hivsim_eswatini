@@ -1,0 +1,168 @@
+# Experiment 024 — History matching, wave 1
+#
+# First calibration wave. Seven parameters from 023, targets settled there, run
+# through the IDM `historymatching` package.
+
+experiment: 024_hm_wave1
+question: >
+  Does the data rule out any of the parameter space, and does the emulator work
+  well enough to trust the cut?
+
+environment:
+  model_tag: model-v1.3
+  stisim: 1.5.11                # commit 97b8bc1
+  starsim: 3.5.2                # commit ceddb877
+  historymatching: 2.0.1
+  python: "3.12"                # raccoon, uv-managed; local laptop is 3.14
+  emulator_backend: >
+    gpflow/TensorFlow available on raccoon at Python 3.12, so hm_shim.py's stub
+    is inert there. The stub is still needed locally (3.14, no TF wheels) and is
+    why bayes_linear was the design choice rather than a fallback.
+
+# --- Design -------------------------------------------------------------------
+
+design:
+  n_points: 1000
+  sampling: latin hypercube
+  n_replicates: 1               # HM absorbs noise in the emulator residual
+  n_agents: 10000
+  stop_year: 2026
+  sim_seed: 1
+  random_seed: 20260903
+  emulator: bayes_linear
+  implausibility_threshold: 4.0  # raised from 3.0: known structural misspecification
+  waves_run: 1
+  wave1_feature: prev_15_49_all_mean
+
+  bounds:                        # log where 023 sampled on a log scale
+    log_beta_m2f:        [0.0096, 0.025]   # floor raised from 0.008 per 023
+    log_rel_beta_f2m:    [0.15, 0.60]
+    log_s_f_young:       [0.8, 3.0]        # extends below 1.0 so the data can reject it
+    age_gap_shift:       [-2.0, 3.0]
+    log_age_gap_sd_mult: [0.6, 1.8]
+    prop_f0:             [0.45, 0.85]
+    prop_m0:             [0.40, 0.80]
+
+  fixed:
+    rel_init_prev: 0.2           # 023: max |rho| 0.10, 014's ranking was an artefact
+    conc_mult: 1.0               # 023: weakest AND confounded with rel_beta_f2m at r=0.81
+
+# --- Observations -------------------------------------------------------------
+
+observations:
+  n_registered: 48
+  tiers:
+    A: 8                         # prevalence 15-49 by sex x year, the wave-1 mean, peak deaths
+    B: 16                        # prevalence and incidence ratios, incidence by sex and band
+    C: 24                        # prevalence by age band x sex x year
+  sigma_disc_prev: 0.02
+  sigma_deaths: 2000
+  holdout: calibration_data/incidence_2021_VALIDATION_ONLY.csv   # UNTOUCHED
+
+# --- Results ------------------------------------------------------------------
+
+results:
+  emulator_r2: 0.923
+  emulator_mse: 0.000361
+  n_train: 750
+  nroy_fraction: 0.872
+  wall_time_s: 456
+
+  constrained_directions:        # the diagnostic that answers the question
+    PC1: {reduction: 0.357, loadings: "log_beta_m2f 0.67, log_rel_beta_f2m 0.54, log_s_f_young 0.35 (same sign)"}
+    PC2: {reduction: 0.093, loadings: "log_age_gap_sd_mult 0.64, age_gap_shift -0.59"}
+    PC3: {reduction: 0.055, loadings: "prop_f0 0.56, prop_m0 0.56, log_s_f_young 0.53"}
+    PC4_to_PC7: {reduction: 0.0}
+
+  coverage:
+    targets_individually_reachable: 48    # of 48; best |z| <= 1.16 everywhere
+    envelope_5_95_covers: 45              # of 48
+    best_joint_point_within_3sigma: 48    # of 48, design row 868
+    note: >
+      The coverage check that 009 and 014 both failed. Joint reachability is the
+      claim that matters: covering each target separately would be consistent
+      with mutually exclusive points and hence with an unfittable model.
+
+  best_joint_point:
+    design_row: 868
+    beta_m2f: 0.0142
+    rel_beta_f2m: 0.3097
+    s_f_young: 2.2240
+    age_gap_shift: 0.0700
+    age_gap_sd_mult: 1.5001
+    prop_f0: 0.6088
+    prop_m0: 0.4742
+    mae_age_stratified: 0.0405            # 022 arm A: 0.0584
+    bias_age_stratified: -0.0070          # 016-022: about -0.043
+    strata_within_phia_ci: "26/54"        # 022 arm A: 23/54
+    worst_residual: {prev_f_25_35_2016: 3.00}
+    caveat: one draw of 1000, not a posterior
+
+# --- Reversals ----------------------------------------------------------------
+
+reversals:
+  prevalence_deficit_not_structural: >
+    Experiments 016-022 diagnosed an irreducible -4.3 pp prevalence deficit, and
+    this experiment's sigma_disc = 0.02 was set to absorb it. With sigma_disc = 0
+    -- PHIA sampling error alone -- the best draw sits at 3.98 sigma on the six
+    PHIA 15-49 targets. The deficit was a parameter-value deficit measured at
+    default transmission parameters, not structural misspecification.
+  readme_success_criteria: >
+    The README called NROY near 100% "uninformative" and 10-80% "clean". That
+    conflates NROY volume with informativeness. With 7 parameters and 1 emulated
+    scalar, most of the box must survive. constrained_dims.png is the correct
+    diagnostic and shows a real 36% cut on the transmission-intensity direction.
+  rel_beta_f2m: >
+    023 concluded 0.20-0.30 from the F:M incidence ratio alone. The 50 best joint
+    points across 48 targets give a median of 0.40 (IQR 0.30-0.49). Both may be
+    true; unresolved, and it matters downstream.
+
+method_failures:
+  tier_c_top_band: >
+    run.py built tier C on a fixed (45, 65) top band, but SHIMS1 (2011) publishes
+    strata only to [45:50). The 2011 target was therefore built from PHIA 45-49
+    and compared against a model average over 45-65. Male prevalence falls steeply
+    after 50, so the model read 4.99 sigma low on a band it fits at +0.30. This
+    was the ONLY defect wave 1 reported, and it was in the target construction.
+    Fixed in tier_c_bands(), which derives the cap from the target file per year.
+    The wave-1 feature uses ages 15-50 and is unaffected, so the emulator and NROY
+    stand as run; rederive.py recomputes the affected features from the cached
+    ensemble with no re-simulation.
+
+# --- Residual defects ---------------------------------------------------------
+
+residual_defects:                # the 3 of 48 the 5-95% envelope misses
+  inc_f_35_50_2016:  {target: 2.09,   ensemble_p95: 1.087,  percentile: 100.0}
+  prev_m_15_25_2007: {target: 0.0589, ensemble_p95: 0.0480, percentile: 97.7}
+  prev_m_15_25_2011: {target: 0.0506, ensemble_p95: 0.0504, percentile: 95.0}
+  interpretation: >
+    Older women's incidence and young men's prevalence. Both concern whom the
+    model puts those groups in contact with. This supersedes the "women 15-24 /
+    men 25-34 / women 35-44" characterisation from 016-022, which was measured at
+    default transmission parameters and largely dissolves once beta_m2f is free.
+
+accepted_risk:
+  re_identification: >
+    Workflow step 7 still not done, and obs 3 sharpens why: PC1 confirms
+    beta_m2f and s_f_young enter the wave-1 feature as a product, so wave 1
+    constrains the product and leaves the ratio free -- exactly the confounding
+    023 flagged at effect-signature r = 0.82. Deferred by researcher decision
+    2026-09-03. Now the largest gap in the sequence.
+
+recommendations:
+  sigma_disc_wave2: 0.01         # 5x the cutting power; 0 is not defensible
+  wave2_features: tier B (prevalence F:M ratio, female young:old ratio)
+  wave2_n_agents: 20000          # per 020, now that age-stratified targets are in play
+  add_as_features: [inc_f_35_50_2016, prev_m_15_25]
+
+compute:
+  host: raccoon (Azure HB120rs_v2, 120 cores, spot)
+  n_workers: 120
+  n_sims: 1000
+  wall_time: 456 s
+  resume: >
+    Per-point parquet keyed on a hash of the parameter VALUES, not the row index
+    -- a Latin hypercube design changes with n_samples, so index keys would be
+    silently wrong across designs. Survives spot reclamation and lets a later
+    wave reuse a repeated point.
+  outputs_left_on_vm: outputs/sims/ (118 MB); ensemble.parquet is the consolidated form

@@ -316,3 +316,138 @@ def plot_prevalence_fit(df, label, outpath, kind="arm", tg=None, stamp=None):
     fig.savefig(outpath, dpi=130, bbox_inches="tight")
     plt.close(fig)
     return sc
+
+
+# --- Incidence -----------------------------------------------------------------
+#
+# Added 2026-09-03 for exp 024. Shares this module with the prevalence figure for
+# the same reason: one implementation, so the format cannot drift between
+# experiments the way `dashboard_fit_*.png` did.
+#
+# TWO conventions collide here and both are load-bearing:
+#   * incidence is a PERCENT per year (per 100 person-years), not a proportion,
+#     because that is how SHIMS publishes it;
+#   * the denominator is SUSCEPTIBLES (alive minus infected), not the whole
+#     population. Using the whole population understates incidence by roughly
+#     (1 - prevalence), which at Eswatini's prevalence is a ~30% error.
+
+INC_TARGETS = "calibration_data/incidence_by_age_sex.csv"
+INC_CUTOFF = 2017.0   # last year worth plotting: just past the 2016 target
+
+
+def load_inc_targets(path=None):
+    """Fitted incidence targets. Excludes the 2021 validation hold-out by design.
+
+    `uninformative` marks rows whose published CI reaches zero -- four of eight,
+    including all three male 2016 bands. They are plotted hollow so a reader does
+    not mistake a point estimate that carries no information for a real miss.
+    """
+    root = Path(__file__).parent
+    return pd.read_csv(root / (path or INC_TARGETS))
+
+
+def _inc_series(df, sex, lo, hi):
+    """Annual incidence % over time for one sex and age range, over susceptibles."""
+    lo, hi = (lo // 5) * 5, -(-hi // 5) * 5
+    new = alv = inf = None
+    for b in range(lo, hi, 5):
+        nc = f"popagesex.new_infections_{sex}_{b}_{b + 5}"
+        if nc not in df.columns:
+            return None
+        new = df[nc] if new is None else new + df[nc]
+        alv = df[f"popagesex.n_alive_{sex}_{b}_{b + 5}"] if alv is None \
+            else alv + df[f"popagesex.n_alive_{sex}_{b}_{b + 5}"]
+        inf = df[f"popagesex.n_infected_{sex}_{b}_{b + 5}"] if inf is None \
+            else inf + df[f"popagesex.n_infected_{sex}_{b}_{b + 5}"]
+    susc = alv - inf
+    return 100.0 * new / susc.where(susc > 0)
+
+
+def plot_incidence_fit(df, label, outpath, kind="arm", tg=None, stamp=None,
+                       cutoff=INC_CUTOFF):
+    """Incidence against SHIMS by sex: a time series plus the 2016 age profile.
+
+    `cutoff` truncates the modelled curve just past the last calibration target.
+    Plotting to 2026 invites reading the post-target years as a projection, which
+    they are not -- nothing after 2016 constrains them, and the 2021 incidence
+    hold-out is deliberately untouched.
+    """
+    tg = load_inc_targets() if tg is None else tg
+    d = df[df.timevec <= cutoff]
+    cols = {"f": "#c0392b", "m": "#2c6fbb"}
+    names = {"f": "Women", "m": "Men"}
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.5, 4.8),
+                             gridspec_kw=dict(width_ratios=[1.45, 1]))
+
+    # --- Left: incidence over time, 15-49, by sex ---
+    ax = axes[0]
+    for sex in ("f", "m"):
+        s = _inc_series(d, sex, 15, 50)
+        if s is None:
+            continue
+        gg = pd.DataFrame({"t": d.timevec.values, "v": s.values}).dropna()
+        if not len(gg):
+            continue
+        agg = gg.groupby("t").v
+        if kind == "ensemble":
+            centre, lo_b, hi_b = agg.median(), agg.quantile(0.05), agg.quantile(0.95)
+        else:
+            centre = agg.mean()
+            sd = agg.std(ddof=1).fillna(0.0)
+            lo_b, hi_b = centre - sd, centre + sd
+        ax.plot(centre.index, centre.values, color=cols[sex], lw=1.8,
+                label=f"model {names[sex]}")
+        if (hi_b - lo_b).abs().sum() > 0:
+            ax.fill_between(centre.index, lo_b.values, hi_b.values,
+                            color=cols[sex], alpha=0.16, lw=0)
+    # the 15-49/18-49 aggregate targets
+    for _, t in tg.iterrows():
+        if int(t.age_high) - int(t.age_low) < 25:      # age-banded rows go right
+            continue
+        ax.errorbar(t.year, t.incidence_pct,
+                    yerr=[[t.incidence_pct - t.lb], [t.ub - t.incidence_pct]],
+                    fmt="s" if not t.uninformative else "o",
+                    mfc="white" if t.uninformative else cols[t.sex],
+                    color=cols[t.sex], ms=7, capsize=3, zorder=5)
+    ax.axvline(cutoff, ls=":", c="grey", lw=1)
+    ax.set_xlabel("year"); ax.set_ylabel("HIV incidence (% per year)")
+    ax.set_title(f"Incidence 15-49 by sex (curve truncated at {cutoff:.0f})", fontsize=10)
+    ax.legend(fontsize=8); ax.set_ylim(bottom=0); ax.grid(alpha=0.3)
+
+    # --- Right: the 2016 age profile (SHIMS2 Table 5.3.B) ---
+    ax = axes[1]
+    bands = tg[(tg.year == 2016)]
+    for sex in ("f", "m"):
+        b = bands[bands.sex == sex].sort_values("age_low")
+        if not len(b):
+            continue
+        mid = (b.age_low + b.age_high) / 2
+        mv, mlo, mhi = [], [], []
+        for _, t in b.iterrows():
+            s = _inc_series(df[np.floor(df.timevec) == 2016], sex,
+                            int(t.age_low), int(t.age_high))
+            v = s.dropna() if s is not None else pd.Series(dtype=float)
+            if not len(v):
+                mv.append(np.nan); mlo.append(np.nan); mhi.append(np.nan); continue
+            if kind == "ensemble":
+                mv.append(v.median()); mlo.append(v.quantile(0.05)); mhi.append(v.quantile(0.95))
+            else:
+                sd = v.std(ddof=1); sd = 0.0 if not np.isfinite(sd) else sd
+                mv.append(v.mean()); mlo.append(v.mean() - sd); mhi.append(v.mean() + sd)
+        ax.plot(mid, mv, "-o", color=cols[sex], lw=1.8, ms=5, label=f"model {names[sex]}")
+        ax.fill_between(mid, mlo, mhi, color=cols[sex], alpha=0.16, lw=0)
+        for _, t in b.iterrows():
+            ax.errorbar((t.age_low + t.age_high) / 2, t.incidence_pct,
+                        yerr=[[t.incidence_pct - t.lb], [t.ub - t.incidence_pct]],
+                        fmt="o", mfc="white" if t.uninformative else cols[sex],
+                        color=cols[sex], ms=7, capsize=3, zorder=5)
+    ax.set_xlabel("age (band midpoint)"); ax.set_ylabel("HIV incidence (% per year)")
+    ax.set_title("2016 age profile — SHIMS2 Table 5.3.B\nhollow = CI reaches 0, "
+                 "carries no information", fontsize=9)
+    ax.set_ylim(bottom=0); ax.grid(alpha=0.3); ax.legend(fontsize=8)
+
+    ttl = label if stamp is None else f"{label}\n{stamp}"
+    fig.suptitle(ttl + "   —   incidence vs SHIMS (2021 held out)", y=1.02, fontsize=11)
+    fig.savefig(outpath, dpi=130, bbox_inches="tight")
+    plt.close(fig)

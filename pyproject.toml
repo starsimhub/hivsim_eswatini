@@ -3,8 +3,14 @@ name = "hivsim-eswatini"
 version = "0.1.0"
 description = "HIV calibration project for Eswatini, built on Starsim/STIsim"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"  # starsim 3.5.2 floor; >=3.10 made uv sync unresolvable
 dependencies = [
+    # History matching, exp 024. Declared rather than pip-installed because
+    # `uv run` re-syncs the environment to pyproject and silently drops
+    # anything side-loaded. setuptools<82 is required: setuptools 82 removed
+    # pkg_resources, which gpflow still imports, so gpflow breaks without it.
+    "historymatching @ git+https://github.com/InstituteforDiseaseModeling/history_matching",
+    "setuptools<82",
     "starsim>=3.5.2",
     "stisim>=1.5.11",  # adopted in exp 018; 1.5.11 verified behaviourally neutral
     "numpy",

@@ -1,0 +1,153 @@
+# Experiment 023 — Parameter engineering
+#
+# First experiment of the calibration proper. Settles what is free, what is
+# fixed, and what the calibration is fitted to. 024 is coverage check v3.
+
+experiment: 023_parameter_engineering
+question: >
+  Which parameters should wave 1 open, on what priors, against which targets --
+  and does the prior actually move those targets?
+
+environment:
+  model_tag: model-v1.3
+  repo_commit: 56d696d          # exp/023-parameter-engineering
+  stisim: 1.5.11                # commit 97b8bc1
+  starsim: 3.5.2                # commit ceddb877
+  python: "3.14"
+
+# --- The candidate set -------------------------------------------------------
+
+design:
+  n_draws: 400
+  n_replicates: 1
+  n_agents: 10000
+  sim_seed: 1                   # one replicate per draw; the DRAW varies, not the seed
+  draw_seed: 20260902
+  sampling: independent uniform, log or linear per parameter
+
+  identifiability_anchor: >
+    Per-act risk is a product: women beta_m2f x s_f(band), men beta_m2f x
+    rel_beta_f2m x s_m(band). With beta_m2f and the multipliers all free the
+    model is unidentified -- halving one and doubling the others is identical.
+    The 25-34 band is therefore fixed at 1.0 for both sexes. A reference point,
+    not a biological claim.
+
+  candidates:
+    beta_m2f:        {prior: [0.008, 0.025], scale: log,  verdict: KEEP}
+    rel_beta_f2m:    {prior: [0.15, 0.60],   scale: log,  verdict: KEEP}
+    s_f_young:       {prior: [0.8, 3.0],     scale: log,  verdict: KEEP}
+    age_gap_shift:   {prior: [-2.0, 3.0],    scale: lin,  verdict: KEEP}
+    age_gap_sd_mult: {prior: [0.6, 1.8],     scale: log,  verdict: KEEP}
+    prop_f0:         {prior: [0.45, 0.85],   scale: lin,  verdict: KEEP}
+    prop_m0:         {prior: [0.40, 0.80],   scale: lin,  verdict: KEEP}
+    rel_init_prev:   {prior: [0.1, 0.5],     scale: lin,  verdict: DROP, fix_at: 0.2}
+    conc_mult:       {prior: [0.5, 2.0],     scale: log,  verdict: DROP, fix_at: 1.0}
+
+  scalarisation: >
+    age_gap_shift and age_gap_sd_mult are single scalars over all nine
+    (mean, sd) pairs in StructuredSexual.age_diff_pars; conc_mult is one scalar
+    over f1/f2/m1/m2_conc. Preserves the relative structure while giving each
+    hypothesis one degree of freedom instead of eighteen and six.
+
+# --- Results -----------------------------------------------------------------
+
+results:
+  establishment: "397/400 (99%). All 3 failures at beta_m2f 0.0082-0.0096,
+    spanning the full rel_init_prev range -- transmission-driven, not seeding."
+  max_abs_rho:
+    beta_m2f: 0.74
+    rel_beta_f2m: 0.68
+    prop_m0: 0.54
+    prop_f0: 0.50
+    s_f_young: 0.41
+    age_gap_shift: 0.36
+    age_gap_sd_mult: 0.27
+    conc_mult: 0.19
+    rel_init_prev: 0.10
+  on_target: >
+    Every surviving parameter is strongest against the target it was opened to
+    control: beta_m2f -> peak deaths (+0.74), rel_beta_f2m -> prevalence F:M
+    ratio (-0.68), s_f_young -> female young:old ratio (+0.41), prop_m0 -> male
+    45-64 prevalence (-0.54), prop_f0 -> female 45-64 (-0.50), age_gap_shift ->
+    2011 F:M incidence ratio (+0.36).
+  s_f_young_specificity: "rho +0.36 vs women 15-24, +0.04 vs women 35-44 --
+    specific, not a level parameter in disguise."
+  fm_ratio: "reachable. Ensemble spans 0.78-7.05 against observed 1.90-2.04,
+    crossing at rel_beta_f2m ~0.20-0.30, so the current 0.25 is about right."
+
+reversals:
+  rel_init_prev: >
+    014 obs 1 ranked it rho 0.59-0.62, second only to beta_m2f. Here it is 0.10,
+    the weakest in the set. 014's prior floor of 0.05 was BELOW the
+    establishment threshold, so rel_init_prev was acting as an on/off switch for
+    whether an epidemic happened -- which is what its correlation measured (014
+    obs 5 identifies it as "the discriminator" between dead and live draws).
+    With 018's floor at 0.1 every draw establishes and the seed level barely
+    matters by 2007.
+  rel_beta_f2m_direction: >
+    The agent inferred from an EMOD per-partnership-year comparison (men 26%
+    lower in HIVsim) that 0.25 was too low. The sweep says 0.20-0.30 reproduces
+    the observed F:M incidence ratio, i.e. 0.25 is about right. The EMOD
+    comparison neglected coital dilution and condom differences, both flagged as
+    caveats at the time and both cutting this way.
+
+method_failures:
+  orthogonality_check: >
+    As specified in the README, it correlated the PRIOR DRAWS -- an independent
+    uniform sample -- so every pair returned |rho| <= 0.014, confirming only
+    that the sampler is independent. With 99% of draws establishing there was no
+    well-fitting subset to restrict to either. Replaced with an effect-signature
+    correlation (each parameter's rho vector across all 23 targets), which
+    answers the question that matters: do two parameters do the same thing?
+    Both versions are retained in outputs/ so the distinction is visible.
+
+confounding:
+  measure: Spearman correlation of rho-vectors across 23 targets
+  beta_m2f__s_f_young: {r: 0.82, flag: CONFOUNDED,
+    mitigation: "they differ on the one statistic that separates them (female
+      young:old ratio). Expect correlation in the wave-1 posterior and report
+      it rather than pretending it away."}
+  conc_mult__rel_beta_f2m: {r: 0.81, flag: CONFOUNDED,
+    action: "decisive argument for dropping conc_mult -- weakest AND redundant
+      with a much stronger parameter. Confirms matchers.py's own docstring
+      warning that age_diff_pars is not orthogonal to concurrency."}
+  beta_m2f__rel_beta_f2m: {r: 0.76}
+  prop_f0__prop_m0: {r: 0.74}
+
+# --- Targets ------------------------------------------------------------------
+
+targets:
+  prevalence: {file: calibration_data/prevalence_by_age_sex.csv, rows: 52,
+               status: hard, note: "2 of 54 dropped -- 2007 M 15-19 and 2007 F
+                 60-64 hold <5 expected infected agents even at N=50,000 (020)"}
+  incidence:  {file: calibration_data/incidence_by_age_sex.csv, rows: 8,
+               status: "soft, CI-weighted",
+               note: "4 of 8 rows have CIs reaching zero, including all three
+                 male 2016 bands -- the age-stratified male incidence carries
+                 essentially no information"}
+  fm_ratio:   {rows: 2, status: "soft, derived",
+               note: "robust to the recency assay's mean-duration assumption in
+                 a way the absolute levels are not"}
+  deaths:     {file: data/eswatini_hiv_calib.csv, status: down-weighted,
+               note: "model reaches at most 62% of the UNAIDS peak anywhere in
+                 the transmission prior; a hard target would force a trade the
+                 data cannot resolve"}
+  holdout:    {file: calibration_data/incidence_2021_VALIDATION_ONLY.csv,
+               status: UNTOUCHED}
+
+recommendations:
+  wave_1_parameters: 7
+  beta_m2f_floor: "consider raising 0.008 -> 0.0096 in 024; all three dead draws
+    sit in that sliver, so it costs no coverage"
+  outstanding: >
+    Re-identification (workflow step 7) is still not done and is now the largest
+    gap. beta_m2f <-> s_f_young at r = 0.82 is exactly the kind of confounding a
+    synthetic-data recovery test would expose as unrecoverable before real data
+    is touched. Method selection also deserves revisiting: HM was chosen when
+    014 had nine parameters, no incidence and hard death targets.
+
+compute:
+  host: local laptop (C:\Python314\python.exe)
+  n_sims: 400
+  wall_time: ~1.8 h on 8 workers
+  resume: per-draw parquet in outputs/sims/; a draw whose file exists is skipped

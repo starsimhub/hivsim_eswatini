@@ -1,4 +1,4 @@
-# Exp 023 — Parameter engineering: four parameters, and a target set that includes incidence
+# Exp 023 — Parameter engineering: nine parameters, and a target set that includes incidence
 
 > First experiment of the calibration proper. 022 closed the model-development
 > sequence; this settles what is free, what is fixed, and what the calibration
@@ -37,12 +37,77 @@ along that ridge reporting an NROY space wider than the data warrants. So the
 not a biological claim, exactly as fixing sea level at zero says nothing about
 mountains.
 
+### Transmission and susceptibility
+
 | parameter | prior | scale | mechanism |
 |---|---|---|---|
 | `beta_m2f` | 0.008–0.025 | log | per-act M→F risk for the reference band. Floor from [018](../018_adopt_and_size/SUMMARY.md)'s establishment map (below 0.008 epidemics die and pollute the ensemble — 014's 22% dead draws dragged its envelope to the floor); ceiling well past 0.014, where [014](../014_prior_expansion/SUMMARY.md) obs 4 found the best draws pinned and still rising. |
 | `rel_beta_f2m` | 0.15–0.60 | log | the male:female per-act direction ratio. Currently 0.25. EMOD's implied value for its ≥25 band is ~0.35, and Boily's meta-analysis puts the ratio nearer 0.5. Per partnership-year, HIVsim currently gives men **26% less** acquisition risk than EMOD (18.1% vs 24.5%), so 0.25 looks low. |
 | `s_f(15–24)` | 0.8–3.0 | log | young women's elevated susceptibility. Biologically supported — cervical ectopy, immature genital mucosa, HSV-2 acquisition around debut. Currently 1.7; EMOD fitted 1.72 (4.894/2.844). Prior extends **below 1.0** so the data can reject the mechanism rather than being assumed into it. |
 | `rel_init_prev` | 0.1–0.5 | natural | 1985 seed prevalence multiplier. 014 obs 1 ranked it second only to `beta_m2f` (ρ = 0.59–0.62). Floor at 0.1 per 018's establishment map. |
+
+### Mixing and risk structure — added after the four-parameter set was rejected as too narrow
+
+The four-parameter version was **wrong, and wrong in a specific way**: it argued
+at length that the male 25–34 residual is an *exposure* problem — age mixing,
+risk-group composition, migration — and then opened only susceptibility
+parameters while fixing every exposure one.
+
+It also missed the mechanism entirely. `StructuredSexual.age_diff_pars` is the
+direct parameterisation of age-disparate partnerships — mean and SD of partner
+age gap, by the woman's age band and risk group — and `make_sim` never touches
+it, so it has been at stisim defaults throughout. It is what experiment 011 was
+about and what `references/Ott_Age_Gaps_AHRI.pdf` covers.
+
+| parameter | prior | scale | mechanism |
+|---|---|---|---|
+| `age_gap_shift` | −2 to +3 yr | linear | additive shift on all nine `age_diff_pars` **means**. Sets *which* men women seek |
+| `age_gap_sd_mult` | 0.6–1.8 | log | multiplier on all nine **SDs** — the assortativity. A tight SD locks cohorts together, a wide one mixes them |
+| `prop_f0` | 0.45–0.85 | linear | female low-risk share. ρ = **0.45** against age-at-peak female prevalence in the shape re-analysis of 014 — the strongest signal after `beta_m2f`, and dropped from the four-parameter set on 014's *level*-only ranking, the exact error `plot_fit_progression.py` exists to prevent repeating |
+| `prop_m0` | 0.40–0.80 | linear | male low-risk share. Weaker (ρ ≈ 0.19–0.24) but it is the male exposure side, where the worst residual is |
+| `conc_mult` | 0.5–2.0 | log | one multiplier on `f1/f2/m1/m2_conc`. Included on request; expectations low — `m1_conc` measured ρ = 0.01 on level and 0.14 on shape, the weakest thing in 014's set |
+
+Two scalars rather than eighteen numbers for `age_diff_pars`, and one rather
+than six for concurrency: the "one calibration parameter modifying many model
+parameters through a scaling relationship" pattern, which preserves the relative
+structure while giving each hypothesis a single degree of freedom.
+
+### How much of the male age residual these can actually reach
+
+Verified in the matcher: male partnering eligibility is exactly
+`over_debut & male & (partners < concurrency)`. No male age taper, no male upper
+age cut, no male age term anywhere — where **women** get an explicit
+seeking probability that declines to zero at 55. Male risk is structurally
+age-flat given debut and concurrency.
+
+But matching is **demand-driven**: women draw a desired partner age
+(`own_age + gap`) and take the closest available man at or above it. So the
+model does produce an emergent male age-risk profile — a convolution of the
+female age distribution with the age-gap distribution. `age_gap_shift` and
+`age_gap_sd_mult` are therefore genuine levers on it.
+
+What they **cannot** produce is a *non-smooth* male profile. A convolution is
+smooth by construction, so a trough localised to 25–34 while 35–44 is left
+alone is unreachable at any parameter value. **That is the pre-registered
+failure mode**: if wave 1 closes most of the male residual, the defect was
+mixing; if a 25–34-specific trough survives, male age-dependent risk behaviour
+is a genuine structural gap and that defines the next model experiment.
+
+### Two warnings from the matcher's own docstring
+
+> *"in a calibration setting, age_diff_pars is not orthogonal to stable_dur_pars
+> (concurrency), as concurrency factors influence the available pool of females
+> and males looking for partners"*
+
+So expect `age_gap_*` to correlate with `conc_mult` in the orthogonality check.
+Forewarned, and an argument for keeping concurrency to one scalar.
+
+> *"a small downward bias of female-male relationship age gaps of < 1 year ...
+> driven by the matching of young men"*
+
+The **realized** mean gap runs slightly below the parameter. A known offset, not
+a bug, but it means `age_gap_shift` should be read against realized gaps rather
+than assumed to equal them.
 
 ## What stays fixed, and why — the harder half of the decision
 
@@ -127,7 +192,7 @@ NROY space.
 
 ## Plan
 
-**A 150-draw prior sensitivity sweep**, 1 replicate per draw, N = 10 000, at the
+**A 400-draw prior sensitivity sweep**, 1 replicate per draw, N = 10 000, at the
 four parameters above. Deliberately not the coverage check — 024 runs that at
 N = 20 000 with 10 replicates per 020's sizing. This is the smaller,
 cheaper question: *does the prior move the targets, and are the parameters
@@ -159,7 +224,7 @@ Measured:
   `rel_beta_f2m` cannot move the sex ratio. Drop it and record why — a
   three-parameter wave 1 is a better outcome than four with a passenger.
 - **The prior cannot reach the data:** visible here as targets lying outside the
-  ensemble. That is 024's job to quantify, but if it is obvious at 150 draws the
+  ensemble. That is 024's job to quantify, but if it is obvious at 400 draws the
   bounds get revisited before spending 20 000-agent compute on it.
 
 ## Not in scope

@@ -1,27 +1,34 @@
-"""Exp 023 — Prior sensitivity sweep over the four wave-1 parameters.
+"""Exp 023 — Prior sensitivity sweep over nine candidate wave-1 parameters.
 
-150 draws, 1 replicate each, N = 10,000. Deliberately NOT the coverage check:
+400 draws, 1 replicate each, N = 10,000. Deliberately NOT the coverage check:
 024 runs that at N = 20,000 with 10 replicates per 020's sizing. This asks the
-smaller, cheaper question -- does the prior move the targets, and are the
-parameters separable?
+smaller, cheaper question -- does the prior move the targets, and can the data
+tell the parameters apart?
 
-Parameters (see README for why each earns its place, and what stays fixed):
-  beta_m2f        0.008-0.025  log      per-act M->F risk, reference band
-  rel_beta_f2m    0.15-0.60    log      male:female direction ratio
-  s_f_young       0.8-3.0      log      women 15-24 susceptibility multiplier
-  rel_init_prev   0.1-0.5      natural  1985 seed prevalence
+  beta_m2f         0.008-0.025  log   per-act M->F risk, reference band
+  rel_beta_f2m     0.15-0.60    log   male:female direction ratio
+  s_f_young        0.8-3.0      log   women 15-24 susceptibility multiplier
+  rel_init_prev    0.1-0.5      lin   1985 seed prevalence
+  age_gap_shift    -2 to +3 yr  lin   additive, all 9 age_diff_pars means
+  age_gap_sd_mult  0.6-1.8      log   multiplicative, all 9 SDs (assortativity)
+  prop_f0          0.45-0.85    lin   female low-risk share
+  prop_m0          0.40-0.80    lin   male low-risk share
+  conc_mult        0.5-2.0      log   on f1/f2/m1/m2 concurrency
 
-The 25-34 band is anchored at 1.0 for both sexes -- a reference point, not a
-biological claim. Without it, halving beta_m2f and doubling every multiplier
-gives an identical model.
+The 25-34 susceptibility band is anchored at 1.0 for both sexes -- a reference
+point, not a biological claim. Without it, halving beta_m2f and doubling every
+multiplier gives an identical model.
 
 Outputs
   outputs/sims/draw_{i}.parquet   per-draw, written as each finishes
   outputs/draws.csv               the prior sample
   outputs/ensemble.parquet        concatenated trajectories
+  outputs/summary.csv             per-draw target statistics
   outputs/sensitivity.csv         Spearman rho, every parameter x every target
-  outputs/orthogonality.csv       pairwise |rho| between parameters
-  outputs/diagnostics.csv         the five specific questions from the README
+  outputs/confounding.csv         effect-signature correlation between parameters
+  outputs/orthogonality.csv       prior-draw correlations (uninformative -- see
+                                  effect_signature_confounding for why)
+  outputs/diagnostics.csv         the specific questions from the README
 """
 
 import os
@@ -55,17 +62,40 @@ from standard_figures import load_targets, fit_by_stratum  # noqa: E402
 
 N_AGENTS = 10_000
 STOP = 2026
-N_DRAWS = 150
+N_DRAWS = 400
 DRAW_SEED = 20260902
 SIM_SEED = 1          # one replicate per draw; the draw index varies, not the seed
 
 # (low, high, 'log' or 'lin')
 PRIOR = {
-    "beta_m2f":      (0.008, 0.025, "log"),
-    "rel_beta_f2m":  (0.15,  0.60,  "log"),
-    "s_f_young":     (0.8,   3.0,   "log"),
-    "rel_init_prev": (0.1,   0.5,   "lin"),
+    # --- transmission and susceptibility ---
+    "beta_m2f":       (0.008, 0.025, "log"),   # per-act M->F, reference band
+    "rel_beta_f2m":   (0.15,  0.60,  "log"),   # male:female direction ratio
+    "s_f_young":      (0.8,   3.0,   "log"),   # women 15-24 susceptibility
+    # --- seeding ---
+    "rel_init_prev":  (0.1,   0.5,   "lin"),
+    # --- mixing: the mechanism seven experiments implicated and none tested ---
+    "age_gap_shift":  (-2.0,  3.0,   "lin"),   # additive, on all 9 age_diff_pars means
+    "age_gap_sd_mult":(0.6,   1.8,   "log"),   # multiplicative, on all 9 SDs
+    # --- risk structure ---
+    "prop_f0":        (0.45,  0.85,  "lin"),   # female low-risk share
+    "prop_m0":        (0.40,  0.80,  "lin"),   # male low-risk share
+    "conc_mult":      (0.5,   2.0,   "log"),   # on f1/f2/m1/m2 concurrency
 }
+
+# stisim defaults for age_diff_pars, (mean, sd) by female age group x risk group.
+# age_gap_shift and age_gap_sd_mult are single scalars over all nine, which
+# preserves the relative structure -- teens partner with slightly younger men
+# than adults, higher-risk groups with smaller and tighter gaps -- while giving
+# the mixing hypothesis one degree of freedom each instead of eighteen.
+AGE_DIFF_BASE = {
+    "teens": [(7, 3), (6, 3), (5, 1)],
+    "young": [(8, 3), (7, 3), (5, 2)],
+    "adult": [(8, 3), (7, 3), (5, 2)],
+}
+# make_sim's concurrency values, scaled by conc_mult. f0/m0 stay at the stisim
+# default of ~0 (group 0 is strictly monogamous by construction).
+CONC_BASE = {"f1_conc": 0.15, "f2_conc": 0.25, "m1_conc": 0.15, "m2_conc": 0.5}
 
 BANDS = [(15, 25), (25, 35), (35, 50)]
 INCIDENCE_TARGETS = REPO_ROOT / "calibration_data" / "incidence_by_age_sex.csv"
@@ -102,8 +132,19 @@ def _run(draw, pars):
                     rel_init_prev=float(pars["rel_init_prev"]),
                     rel_sus_age=rel_sus_age)
 
+    shift, sd_mult = float(pars["age_gap_shift"]), float(pars["age_gap_sd_mult"])
+    age_diff_pars = {
+        grp: [(max(m + shift, 1.0), max(s * sd_mult, 0.2)) for m, s in vals]
+        for grp, vals in AGE_DIFF_BASE.items()}
+    cm = float(pars["conc_mult"])
+    network_pars = dict(
+        prop_f0=float(pars["prop_f0"]), prop_m0=float(pars["prop_m0"]),
+        age_diff_pars=age_diff_pars,
+        **{k: v * cm for k, v in CONC_BASE.items()})
+
     t0 = time.perf_counter()
     sim = make_sim(seed=SIM_SEED, stop=STOP, verbose=-1, hiv_pars=hiv_pars,
+                   network_pars=network_pars,
                    analyzers=[PopByAgeSex(), Cascade()])
     sim.pars.n_agents = N_AGENTS
     sim.run()
@@ -232,6 +273,29 @@ def sensitivity(s):
     return pd.DataFrame(rows).sort_values("abs_rho", ascending=False)
 
 
+def effect_signature_confounding(sens):
+    """Which parameters DO THE SAME THING to the model.
+
+    The pairwise correlation of prior draws is uninformative here: the design is
+    an independent uniform sample, so those correlations are ~0 by construction
+    and confirm only that the sampler works. The question that matters is
+    whether two parameters have the same effect signature across targets -- if
+    they do, the data cannot tell them apart however they were sampled.
+    """
+    piv = sens.pivot_table(index="target", columns="parameter",
+                           values="rho").dropna()
+    C = piv.corr(method="spearman")
+    rows = []
+    names = list(C.columns)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            r = C.loc[a, b]
+            rows.append(dict(par_a=a, par_b=b, signature_r=r, abs_r=abs(r),
+                             n_targets=len(piv),
+                             flag="CONFOUNDED" if abs(r) > 0.8 else ""))
+    return pd.DataFrame(rows).sort_values("abs_r", ascending=False)
+
+
 def orthogonality(s):
     ok = s[s.established]
     rows = []
@@ -297,7 +361,7 @@ def plot_sensitivity(sens, s, path):
            title="Can rel_beta_f2m reach the\nobserved sex ratio?")
     ax.grid(alpha=0.3)
 
-    fig.suptitle("Exp 023 — prior sensitivity over four wave-1 parameters", y=1.02)
+    fig.suptitle(f"Exp 023 — prior sensitivity over {len(PRIOR)} candidate parameters", y=1.02)
     fig.tight_layout()
     fig.savefig(path, dpi=130, bbox_inches="tight")
     plt.close(fig)
@@ -354,8 +418,12 @@ def main():
 
     orth = orthogonality(s)
     orth.to_csv(OUT_DIR / "orthogonality.csv", index=False)
-    print("\n=== Pairwise parameter correlation (|rho| > 0.8 = trouble) ===")
-    print(orth.round(3).to_string(index=False))
+    conf = effect_signature_confounding(sens)
+    conf.to_csv(OUT_DIR / "confounding.csv", index=False)
+    print("\n=== Which parameters do the same thing? (|r| > 0.8 = confounded) ===")
+    print("(prior-draw correlations are ~0 by construction and say nothing;")
+    print(" this compares effect signatures across targets instead)")
+    print(conf.head(6).round(3).to_string(index=False))
 
     print("\n=== The README's specific questions ===")
     ok = s[s.established]
@@ -367,6 +435,15 @@ def main():
                          answer=f"rho young {r_young:+.2f} vs older {r_old:+.2f}",
                          verdict="specific" if abs(r_young) - abs(r_old) > 0.2
                                  else "acts like a level parameter"))
+    if "prev_m_25-34" in ok and "prev_m_35-44" in ok:
+        for par in ("age_gap_shift", "age_gap_sd_mult", "prop_m0", "conc_mult"):
+            r25 = spearmanr(ok[par], ok["prev_m_25-34"]).statistic
+            r35 = spearmanr(ok[par], ok["prev_m_35-44"]).statistic
+            diag.append(dict(
+                question=f"{par} reaches the male age profile?",
+                answer=f"rho vs men 25-34 {r25:+.2f}, vs men 35-44 {r35:+.2f}",
+                verdict=("differential" if abs(r25 - r35) > 0.2
+                         else "acts uniformly on men")))
     if "inc_fm_ratio_2016" in ok:
         rng = ok["inc_fm_ratio_2016"].dropna()
         diag.append(dict(question="F:M incidence ratio reachable (obs 1.90-2.04)?",

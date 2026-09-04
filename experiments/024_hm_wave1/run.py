@@ -60,6 +60,10 @@ THRESHOLD = 4.0          # raised from 3.0: known structural misspecification
 RANDOM_SEED = 20260903
 PHIA_YEARS = (2007, 2011, 2016)
 
+# Loaded once. summarise_point() runs in a worker process per point, so reading
+# the target file there would re-read it 1000 times.
+_TG = load_targets()
+
 # --- Parameter box. Bounds only -- HM has no prior density. -------------------
 # Log-bounded where 023 sampled on a log scale; the simulator un-transforms.
 BOUNDS = {
@@ -95,6 +99,24 @@ SIGMA_RATIO_REL = 0.15       # prevalence ratios, relative
 SIGMA_INC_RATIO = 0.35       # F:M incidence ratio, on a value near 2.0
 
 WAVE1_FEATURE = "prev_15_49_all_mean"
+
+
+def tier_c_bands(year, tg):
+    """Tier C band edges for one survey year, capped at that survey's own coverage.
+
+    The top band must not extend past the data. SHIMS1 (2011) publishes strata
+    only to [45:50), while 2007 and 2016 reach [60:65). A fixed (45, 65) band
+    therefore compared a target built from PHIA 45-49 against a model average
+    over 45-65 -- and male prevalence falls steeply after 50, so the model looked
+    5 sigma low on a band it actually fits (z -4.99 -> +0.30 once matched).
+
+    That was the only real defect wave 1 reported, and it was in this function,
+    not in the model. Deriving the cap from the target file makes it impossible
+    to reintroduce when a survey with different coverage is added.
+    """
+    top = int(tg[tg.year == year].age_low.max()) + 5
+    edges = [(15, 25), (25, 35), (35, 45), (45, top)]
+    return [(lo, hi) for lo, hi in edges if hi > lo]
 
 
 def build_observations():
@@ -144,10 +166,9 @@ def build_observations():
             "female:male incidence 15-49, robust to the recency assay's MDRI")
 
     # --- Tier C: age-stratified, for later waves ---
-    band_edges = [(15, 25), (25, 35), (35, 45), (45, 65)]
     for year in PHIA_YEARS:
         for sex in ("f", "m"):
-            for lo, hi in band_edges:
+            for lo, hi in tier_c_bands(year, tg):
                 b = tg[(tg.year == year) & (tg.sex == sex)
                        & tg.age_low.between(lo, hi - 5)]
                 if not len(b):
@@ -255,7 +276,9 @@ def summarise_point(g):
         yo_num, yo_den = _prev(g, "f", 15, 25, year), _prev(g, "f", 35, 45, year)
         r[f"prev_young_old_f_{year}"] = yo_num / yo_den if yo_den else np.nan
         for sex in ("f", "m"):
-            for lo, hi in ((15, 25), (25, 35), (35, 45), (45, 65)):
+            # Same per-year cap as the observation side, or the two disagree
+            # about what "the top band" means -- see tier_c_bands().
+            for lo, hi in tier_c_bands(year, _TG):
                 r[f"prev_{sex}_{lo}_{hi}_{year}"] = _prev(g, sex, lo, hi, year)
     r[WAVE1_FEATURE] = float(np.nanmean(
         [r[f"prev_15_49_{s}_{y}"] for y in PHIA_YEARS for s in ("f", "m")]))

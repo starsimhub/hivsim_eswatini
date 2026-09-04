@@ -1,9 +1,11 @@
-year,sex,age_low,age_high,incidence_pct,lb,ub,ci_width,uninformative,source
-2011,f,18,50,3.14,2.63,3.74,1.1100000000000003,False,SHIMS1 2011 (cohort)
-2011,m,18,50,1.65,1.28,2.11,0.8299999999999998,False,SHIMS1 2011 (cohort)
-2016,f,15,25,1.67,0.62,2.71,2.09,False,SHIMS2 Table 5.3.B
-2016,f,25,35,1.54,0.0,3.09,3.09,True,SHIMS2 Table 5.3.B
-2016,f,35,50,2.09,0.23,3.92,3.69,False,SHIMS2 Table 5.3.B
-2016,m,15,25,0.52,0.0,1.14,1.14,True,SHIMS2 Table 5.3.B
-2016,m,25,35,1.5,0.0,3.06,3.06,True,SHIMS2 Table 5.3.B
-2016,m,35,50,0.68,0.0,1.85,1.85,True,SHIMS2 Table 5.3.B
+year,sex,age_low,age_high,incidence_pct,lb,ub,ci_width,uninformative,sigma,fit,source
+2011,f,18,50,3.14,2.63,3.74,1.1100000000000003,False,0.3099313388781869,True,"SHIMS1 2011 (cohort), 18-49"
+2011,m,18,50,1.65,1.28,2.11,0.8299999999999998,False,0.2871716918350766,True,"SHIMS1 2011 (cohort), 18-49"
+2016,f,15,50,1.73,0.96,2.5,1.54,False,0.39285714285714285,True,"SHIMS2 Table 5.3.B, 15-49"
+2016,m,15,50,0.85,0.21,1.49,1.28,False,0.326530612244898,True,"SHIMS2 Table 5.3.B, 15-49"
+2016,f,15,25,1.67,0.62,2.71,2.09,False,0.5331632653061225,False,"SHIMS2 Table 5.3.B -- age shape not trusted, see FIT_POLICY"
+2016,f,25,35,1.54,0.0,3.09,3.09,True,0.7882653061224489,False,"SHIMS2 Table 5.3.B -- age shape not trusted, see FIT_POLICY"
+2016,f,35,50,2.09,0.23,3.92,3.69,False,0.9413265306122449,False,"SHIMS2 Table 5.3.B -- age shape not trusted, see FIT_POLICY"
+2016,m,15,25,0.52,0.0,1.14,1.14,True,0.29081632653061223,False,"SHIMS2 Table 5.3.B -- age shape not trusted, see FIT_POLICY"
+2016,m,25,35,1.5,0.0,3.06,3.06,True,0.7806122448979592,False,"SHIMS2 Table 5.3.B -- age shape not trusted, see FIT_POLICY"
+2016,m,35,50,0.68,0.0,1.85,1.85,True,0.47193877551020413,False,"SHIMS2 Table 5.3.B -- age shape not trusted, see FIT_POLICY"

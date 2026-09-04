@@ -30,12 +30,39 @@ parameter space pays off. **Leading method (deferred to
   mortality, not the UNAIDS AIDS-death *counts* used as a target.
   008's README is closed and left as written; see exp 016.
 - UNAIDS age distribution (`data/eswatini_age_1985.csv`)
+- **SHIMS incidence, adult aggregates only — added 2026-09-04.**
+  `calibration_data/incidence_by_age_sex.csv`, rows with `fit=True`:
+  2011 (SHIMS1 cohort, 18-49) and 2016 (SHIMS2 Table 5.3.B, 15-49), by
+  sex. Four rows. Built by `incidence_construction.py`.
+
+  This entry was missing until 2026-09-04. Incidence was added to the
+  target set during exp 023/024 and the list above was never updated,
+  so the file said incidence was excluded while the code registered it.
+  Recorded now.
+
+  **The six age-banded incidence rows are retained but NOT fitted**
+  (`fit=False`). The published female profile is essentially flat
+  (1.67, 1.54, 2.09 across 15-24, 25-34, 35-49), which is the expected
+  signature of false-recency bias: a recency assay credits a fraction
+  FRR of long-standing infections as recent, and against a susceptible
+  denominator the spurious incidence scales as FRR x P/(1-P)/MDRI —
+  5x larger in women 35-49 than 15-24, 18x in men. See
+  `incidence_construction.py`'s `FIT_POLICY`. **Consequence: the
+  model's incidence age profile is unconstrained by data.** Exp 024's
+  `figures/incidence_age_profile.png` shows what it does anyway.
+
+  The 2011 rows carry an extra sigma term (f 0.126, m 0.194) because
+  SHIMS1 publishes 18-49 and `PopByAgeSex` works in 5-year bands, so
+  the model can bracket that range but not express it.
 
 **Validation hold-out (NOT a fitting target):**
 - 2021 incidence (`calibration_data/incidence_2021_VALIDATION_ONLY.csv`)
 
-**Explicitly excluded from fitting now:** ART coverage, VMMC, anything
-else not listed above.
+**Explicitly excluded from fitting now:** ART coverage, VMMC, the
+age-banded incidence rows above, anything else not listed here.
+
+**When the target set changes, update this list in the same commit.**
+The incidence omission above went unnoticed for two experiments.
 
 **Compute.** Local laptop now (10 sims at a time). Azure VM allocated,
 setup in progress via `idm-azure` skill.

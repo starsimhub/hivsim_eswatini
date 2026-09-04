@@ -2,6 +2,14 @@
 
 Run `python incidence_construction.py` to regenerate.
 
+Revision, 2026-09-04
+--------------------
+**Only the adult aggregates are fitted now.** The six age-banded rows are
+retained with `fit=False`. See FIT_POLICY below for the false-recency argument
+that motivated the change, and note that caution 3 below has been REVERSED as a
+result -- it originally claimed the age profile was more robust than the levels,
+which is the opposite of what the prevalence-amplification arithmetic implies.
+
 Why incidence is worth adding as a target
 -----------------------------------------
 Everything the wave-1 transmission parameters govern is a *rate*, and prevalence
@@ -9,7 +17,8 @@ is a *stock* that confounds incidence with mortality, ART and cohort history.
 Seven experiments (016-022) failed to move the age-shape defect in prevalence
 precisely because susceptibility errors, mixing errors and mortality errors all
 produce similar prevalence deviations. They produce different incidence
-profiles, so incidence is the observation that discriminates among them.
+LEVELS, so incidence still discriminates among them -- but via the level and the
+sex ratio, not via the age profile, which the 2026-09-04 revision drops.
 
 Adding earlier-round incidence also makes the 2021 hold-out worth more, not
 less: validating on 2021 after fitting 2011 and 2016 is a genuine out-of-period
@@ -50,20 +59,28 @@ Cautions the likelihood must respect
 2. **Incidence and prevalence from the same survey are not independent.** They
    share a sampling frame, so treating them as independent likelihood
    components overstates the information. Worth an explicit down-weight.
-3. **The absolute level is more assay-sensitive than the shape.** LAg-avidity
-   estimates depend on the assumed mean duration of recent infection, which
-   scales all cells roughly uniformly. The female:male ratio and the age
-   profile are therefore more robust than the levels, which is why `fm_ratio`
-   is emitted as a derived target alongside them.
+3. **REVERSED 2026-09-04. The age profile is LESS trustworthy than the level,
+   not more.** The original claim here was that because LAg-avidity estimates
+   depend on an assumed mean duration of recent infection (MDRI) that scales all
+   cells roughly uniformly, the ratios and the age profile were more robust than
+   the levels. The MDRI part is right and is why `fm_ratio` is still emitted.
+   The age-profile part was wrong: it accounted only for MDRI, and ignored
+   false-recency bias, which does NOT scale uniformly -- it scales with
+   P/(1-P), so it grows with age exactly as prevalence does. See FIT_POLICY.
 
 What the data says, in the survey's own words
 ---------------------------------------------
 SHIMS2's chapter conclusion: "New HIV infections continue at high rates among
-males aged 25-34 years and females aged 35-49 years." Both are bands where this
-model's prevalence residual is largest -- men 25-34 at -12.7 pp and women 35-44
-at +4.5 pp -- which is the reason to bring incidence in.
+males aged 25-34 years and females aged 35-49 years."
+
+Read that with caution. Both are high-prevalence bands, which is precisely where
+false-recency bias inflates a cross-sectional recency estimate most, so the
+conclusion is partly a property of the assay rather than of the epidemic. The
+2011 cohort estimate does not share this problem -- a longitudinal design has no
+recency misclassification -- which is a further reason to weight it above 2016.
 """
 
+import numpy as np
 import pandas as pd
 
 OUT = "calibration_data/incidence_by_age_sex.csv"
@@ -85,33 +102,95 @@ OBS = {
     (2016, "f", 35, 50): (2.09, 0.23, 3.92, "SHIMS2 Table 5.3.B"),
 }
 
-# Published 15-49 aggregates. NOT emitted as fitting rows -- that would
-# double-count the age bands above -- but used to build the F:M ratio target and
-# to check the bands are consistent with their own published total.
+# Published adult aggregates: (value, lb, ub). 2011 is 18-49 (SHIMS1's published
+# range), 2016 is 15-49. CIs from data/eswatini_ppdv.csv, which reproduces
+# SHIMS3 Table 5.1 and SHIMS2 Table 5.3.B exactly.
+#
+# **These are the fitting rows as of 2026-09-04** -- see FIT_POLICY below. They
+# used to be excluded to avoid double-counting the bands; now it is the bands
+# that are excluded, so the double-counting concern is satisfied from the other
+# direction.
 AGG_15_49 = {
-    (2011, "m"): 1.65, (2011, "f"): 3.14,     # 18-49 for SHIMS1
-    (2016, "m"): 0.85, (2016, "f"): 1.73,
+    (2011, "m"): (1.65, 1.28, 2.11), (2011, "f"): (3.14, 2.63, 3.74),
+    (2016, "m"): (0.85, 0.21, 1.49), (2016, "f"): (1.73, 0.96, 2.50),
 }
+
+# Aggregation-span sigma for the 2011 rows only, measured over exp 024's
+# 1000-draw ensemble as half the gap between the model's 15-50 and 20-50
+# estimates. SHIMS1 publishes 18-49; PopByAgeSex works in 5-year bands, so the
+# model can bracket that range but not express it. Half the bracket width is the
+# irreducible aggregation uncertainty. Researcher decision 2026-09-04: widen
+# sigma rather than pretend to a precision the bands cannot deliver.
+SIGMA_AGG_2011 = {"f": 0.126, "m": 0.194}
+
+FIT_POLICY = """\
+Fitted rows are the adult aggregates only; the age-banded rows are retained for
+provenance with fit=False.
+
+Researcher decision, 2026-09-04. The published female age profile is essentially
+flat (1.67, 1.54, 2.09 across 15-24, 25-34, 35-49), which is not a credible
+epidemiological shape in this setting -- and it is the expected signature of
+false-recency bias, which is amplified by prevalence. A recency assay credits
+some fraction FRR of long-standing infections as recent, and because those are
+counted against a SUSCEPTIBLE denominator the spurious incidence scales as
+FRR x P/(1-P)/MDRI. At MDRI = 130 d that term is 5x larger in women 35-49 than
+in women 15-24, and 18x larger in men. At FRR = 0.3% it accounts for ~40% of the
+reported value in both older female bands and ~95% in men 35-49.
+
+So the age SHAPE of these estimates is not trustworthy even where the CI looks
+usable, and 4 of the 6 banded rows already had CIs reaching zero. Aggregating to
+15-49 does not remove the bias but turns it into a population-weighted average
+rather than something concentrated in the band we would most want to learn from.
+
+Keeps incidence level as a target; abandons its age shape. The model's own age
+profile (peak at 22.5 in women, 32.5 in men) is therefore unconstrained by data,
+which is recorded in exp 024 rather than hidden.
+"""
+
+
+def _sigma(lb, ub, year, sex):
+    """Sigma for a fitting row: published CI, plus the 2011 aggregation term."""
+    sd = (ub - lb) / 3.92
+    if year == 2011:
+        sd = float(np.hypot(sd, SIGMA_AGG_2011[sex]))
+    return sd
 
 
 def build():
     rows = []
-    for (year, sex, lo, hi), (val, lb, ub, src) in OBS.items():
-        # A CI reaching zero means the cell cannot distinguish any incidence
-        # from none. Flagged so a likelihood can drop or heavily down-weight it
-        # rather than fitting a point estimate that carries no information.
+
+    # --- Fitted: the adult aggregates ---
+    for (year, sex), (val, lb, ub) in AGG_15_49.items():
+        lo, hi = (18, 50) if year == 2011 else (15, 50)
+        src = ("SHIMS1 2011 (cohort), 18-49" if year == 2011
+               else "SHIMS2 Table 5.3.B, 15-49")
         rows.append(dict(
             year=year, sex=sex, age_low=lo, age_high=hi,
-            incidence_pct=val, lb=lb, ub=ub,
-            ci_width=ub - lb, uninformative=(lb <= 0.0),
-            source=src))
-    df = pd.DataFrame(rows).sort_values(["year", "sex", "age_low"])
+            incidence_pct=val, lb=lb, ub=ub, ci_width=ub - lb,
+            uninformative=(lb <= 0.0), sigma=_sigma(lb, ub, year, sex),
+            fit=True, source=src))
 
-    # Derived: female:male incidence ratio at 15-49, more robust to the recency
-    # assay's mean-duration assumption than the absolute levels are.
+    # --- Retained, NOT fitted: the age bands ---
+    # Kept so the provenance and the false-recency argument stay auditable, and
+    # so a later wave can reinstate them if the FRR concern is resolved.
+    for (year, sex, lo, hi), (val, lb, ub, src) in OBS.items():
+        if (year, sex, lo, hi) in [(2011, "m", 18, 50), (2011, "f", 18, 50)]:
+            continue                      # already emitted as an aggregate above
+        rows.append(dict(
+            year=year, sex=sex, age_low=lo, age_high=hi,
+            incidence_pct=val, lb=lb, ub=ub, ci_width=ub - lb,
+            uninformative=(lb <= 0.0), sigma=(ub - lb) / 3.92,
+            fit=False, source=src + " -- age shape not trusted, see FIT_POLICY"))
+
+    df = pd.DataFrame(rows).sort_values(["fit", "year", "sex", "age_low"],
+                                        ascending=[False, True, True, True])
+
+    # Derived: female:male incidence ratio, more robust to the recency assay's
+    # mean-duration assumption than the absolute levels are. Unaffected by the
+    # band decision -- it was always built from the aggregates.
     ratios = []
     for year in sorted({y for y, _ in AGG_15_49}):
-        m, f = AGG_15_49[(year, "m")], AGG_15_49[(year, "f")]
+        m, f = AGG_15_49[(year, "m")][0], AGG_15_49[(year, "f")][0]
         ratios.append(dict(year=year, quantity="fm_ratio_15_49",
                            value=f / m,
                            note=f"female {f} / male {m}, published aggregates"))
@@ -120,8 +199,8 @@ def build():
     # Consistency: each round's age bands should straddle its published total.
     for year in (2016,):
         for sex in ("m", "f"):
-            bands = df[(df.year == year) & (df.sex == sex)].incidence_pct
-            total = AGG_15_49[(year, sex)]
+            bands = df[(df.year == year) & (df.sex == sex) & ~df.fit].incidence_pct
+            total = AGG_15_49[(year, sex)][0]
             assert bands.min() <= total <= bands.max(), (
                 f"{year} {sex}: published total {total} outside its own band "
                 f"range [{bands.min()}, {bands.max()}] -- check transcription")
@@ -131,7 +210,8 @@ def build():
 if __name__ == "__main__":
     df, ratio_df = build()
     df.to_csv(OUT, index=False)
-    print(f"wrote {OUT}: {len(df)} target rows "
+    print(FIT_POLICY)
+    print(f"wrote {OUT}: {len(df)} rows, {int(df.fit.sum())} FITTED "
           f"({int(df.uninformative.sum())} flagged uninformative)\n")
     print(df.to_string(index=False))
     print("\nderived targets:")

@@ -84,6 +84,10 @@ import numpy as np
 import pandas as pd
 
 OUT = "calibration_data/incidence_by_age_sex.csv"
+# The six age-banded rows are NOT calibration targets and are written here
+# instead, under a name that cannot be mistaken for one. They stay available for
+# the age-profile figure and for the false-recency argument.
+OUT_REF = "data/shims2_incidence_by_age_REFERENCE_NOT_A_TARGET.csv"
 
 # (year, sex, age_low, age_high): (incidence_pct, lb, ub, source)
 # Percentage annual incidence, i.e. per 100 person-years.
@@ -115,13 +119,24 @@ AGG_15_49 = {
     (2016, "m"): (0.85, 0.21, 1.49), (2016, "f"): (1.73, 0.96, 2.50),
 }
 
-# Aggregation-span sigma for the 2011 rows only, measured over exp 024's
-# 1000-draw ensemble as half the gap between the model's 15-50 and 20-50
-# estimates. SHIMS1 publishes 18-49; PopByAgeSex works in 5-year bands, so the
-# model can bracket that range but not express it. Half the bracket width is the
-# irreducible aggregation uncertainty. Researcher decision 2026-09-04: widen
-# sigma rather than pretend to a precision the bands cannot deliver.
-SIGMA_AGG_2011 = {"f": 0.126, "m": 0.194}
+# SUPERSEDED 2026-09-04 (same day). This was an aggregation sigma of f 0.126,
+# m 0.194, added because SHIMS1 publishes 18-49 while PopByAgeSex works in
+# 5-year bands, so 18-49 looked bracketable but not expressible.
+#
+# It IS expressible. Pro-rate the 15-19 band to 2/5 of its person-time and the
+# model lands on the survey's own basis, needing only that incidence is roughly
+# flat across 15-19 -- no assumption about 15-17 incidence, because the survey
+# excludes them and so does the pro-rated estimate. Model 18-49 then comes out
+# at f 3.11 and m 1.70 against targets of 3.14 and 1.65, i.e. z = -0.11 and
+# +0.19, against -0.04 and -0.49 on the naive 15-49 basis.
+#
+# So the sigma widening is removed and the published CI stands alone. The
+# `model_age_basis` column tells the consumer how to compute the model side.
+# Note the direction of travel: putting the MODEL on the DATA's basis makes the
+# targets sharper, where adjusting the data to the model's basis would have
+# required inventing a 15-17 incidence from either the FRR-contaminated SHIMS2
+# 15-24 cell or from the model itself, which would be circular.
+BAND_PRORATE = 0.4       # 18-19 is 2/5 of the 15-19 band
 
 FIT_POLICY = """\
 Fitted rows are the adult aggregates only; the age-banded rows are retained for
@@ -148,71 +163,73 @@ which is recorded in exp 024 rather than hidden.
 """
 
 
-def _sigma(lb, ub, year, sex):
-    """Sigma for a fitting row: published CI, plus the 2011 aggregation term."""
-    sd = (ub - lb) / 3.92
-    if year == 2011:
-        sd = float(np.hypot(sd, SIGMA_AGG_2011[sex]))
-    return sd
+def _model_basis(year):
+    """How the model side must be computed to match this row's published range.
+
+    Consumed by run.py. Spelling it out in the file beats a convention nobody
+    reads: run.py previously compared a model 15-50 estimate to an 18-49 target
+    and nothing in the data said it was wrong.
+    """
+    return "18_50_prorate_first_band_0.4" if year == 2011 else "15_50"
 
 
 def build():
-    rows = []
-
-    # --- Fitted: the adult aggregates ---
+    """Returns (targets, reference, ratios). Targets are aggregates ONLY."""
+    tgt = []
     for (year, sex), (val, lb, ub) in AGG_15_49.items():
         lo, hi = (18, 50) if year == 2011 else (15, 50)
-        src = ("SHIMS1 2011 (cohort), 18-49" if year == 2011
-               else "SHIMS2 Table 5.3.B, 15-49")
-        rows.append(dict(
-            year=year, sex=sex, age_low=lo, age_high=hi,
-            incidence_pct=val, lb=lb, ub=ub, ci_width=ub - lb,
-            uninformative=(lb <= 0.0), sigma=_sigma(lb, ub, year, sex),
-            fit=True, source=src))
-
-    # --- Retained, NOT fitted: the age bands ---
-    # Kept so the provenance and the false-recency argument stay auditable, and
-    # so a later wave can reinstate them if the FRR concern is resolved.
-    for (year, sex, lo, hi), (val, lb, ub, src) in OBS.items():
-        if (year, sex, lo, hi) in [(2011, "m", 18, 50), (2011, "f", 18, 50)]:
-            continue                      # already emitted as an aggregate above
-        rows.append(dict(
+        tgt.append(dict(
             year=year, sex=sex, age_low=lo, age_high=hi,
             incidence_pct=val, lb=lb, ub=ub, ci_width=ub - lb,
             uninformative=(lb <= 0.0), sigma=(ub - lb) / 3.92,
-            fit=False, source=src + " -- age shape not trusted, see FIT_POLICY"))
+            model_age_basis=_model_basis(year),
+            source=("SHIMS1 2011 (longitudinal cohort), 18-49" if year == 2011
+                    else "SHIMS2 Table 5.3.B, 15-49")))
+    df = pd.DataFrame(tgt).sort_values(["year", "sex"])
 
-    df = pd.DataFrame(rows).sort_values(["fit", "year", "sex", "age_low"],
-                                        ascending=[False, True, True, True])
+    # Not targets. Kept so the age profile stays plottable and the FRR argument
+    # auditable, under a filename that cannot be mistaken for a target sheet.
+    ref = []
+    for (year, sex, lo, hi), (val, lb, ub, src) in OBS.items():
+        if hi - lo >= 25:
+            continue                       # the aggregates, already emitted
+        ref.append(dict(
+            year=year, sex=sex, age_low=lo, age_high=hi,
+            incidence_pct=val, lb=lb, ub=ub, ci_width=ub - lb,
+            uninformative=(lb <= 0.0), source=src,
+            excluded_because="age shape not trusted; see FIT_POLICY"))
+    ref_df = pd.DataFrame(ref).sort_values(["year", "sex", "age_low"])
 
-    # Derived: female:male incidence ratio, more robust to the recency assay's
-    # mean-duration assumption than the absolute levels are. Unaffected by the
-    # band decision -- it was always built from the aggregates.
     ratios = []
     for year in sorted({y for y, _ in AGG_15_49}):
         m, f = AGG_15_49[(year, "m")][0], AGG_15_49[(year, "f")][0]
-        ratios.append(dict(year=year, quantity="fm_ratio_15_49",
-                           value=f / m,
+        ratios.append(dict(year=year, quantity="fm_ratio_15_49", value=f / m,
                            note=f"female {f} / male {m}, published aggregates"))
     ratio_df = pd.DataFrame(ratios)
 
-    # Consistency: each round's age bands should straddle its published total.
+    # The excluded bands should still straddle their own published total -- a
+    # transcription check that survives the exclusion.
     for year in (2016,):
         for sex in ("m", "f"):
-            bands = df[(df.year == year) & (df.sex == sex) & ~df.fit].incidence_pct
+            bands = ref_df[(ref_df.year == year) & (ref_df.sex == sex)].incidence_pct
             total = AGG_15_49[(year, sex)][0]
             assert bands.min() <= total <= bands.max(), (
                 f"{year} {sex}: published total {total} outside its own band "
                 f"range [{bands.min()}, {bands.max()}] -- check transcription")
-    return df, ratio_df
+    assert len(df) == 4, f"expected 4 fitting rows, got {len(df)}"
+    assert not (df.age_high - df.age_low < 25).any(), "an age band leaked in"
+    return df, ref_df, ratio_df
 
 
 if __name__ == "__main__":
-    df, ratio_df = build()
-    df.to_csv(OUT, index=False)
+    df, ref_df, ratio_df = build()
     print(FIT_POLICY)
-    print(f"wrote {OUT}: {len(df)} rows, {int(df.fit.sum())} FITTED "
-          f"({int(df.uninformative.sum())} flagged uninformative)\n")
+    df.to_csv(OUT, index=False)
+    ref_df.to_csv(OUT_REF, index=False)
+    print(f"wrote {OUT}: {len(df)} FITTING rows (sex-specific aggregates only)")
     print(df.to_string(index=False))
-    print("\nderived targets:")
+    print(f"\nwrote {OUT_REF}: {len(ref_df)} rows, NOT calibration targets")
+    print(ref_df[["year", "sex", "age_low", "age_high", "incidence_pct",
+                  "lb", "ub", "uninformative"]].to_string(index=False))
+    print("\nderived (not emitted as a target row):")
     print(ratio_df.round(3).to_string(index=False))

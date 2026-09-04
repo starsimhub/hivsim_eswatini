@@ -1,0 +1,7 @@
+year,sex,age_low,age_high,incidence_pct,lb,ub,ci_width,uninformative,source,excluded_because
+2016,f,15,25,1.67,0.62,2.71,2.09,False,SHIMS2 Table 5.3.B,age shape not trusted; see FIT_POLICY
+2016,f,25,35,1.54,0.0,3.09,3.09,True,SHIMS2 Table 5.3.B,age shape not trusted; see FIT_POLICY
+2016,f,35,50,2.09,0.23,3.92,3.69,False,SHIMS2 Table 5.3.B,age shape not trusted; see FIT_POLICY
+2016,m,15,25,0.52,0.0,1.14,1.14,True,SHIMS2 Table 5.3.B,age shape not trusted; see FIT_POLICY
+2016,m,25,35,1.5,0.0,3.06,3.06,True,SHIMS2 Table 5.3.B,age shape not trusted; see FIT_POLICY
+2016,m,35,50,0.68,0.0,1.85,1.85,True,SHIMS2 Table 5.3.B,age shape not trusted; see FIT_POLICY

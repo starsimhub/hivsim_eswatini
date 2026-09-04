@@ -332,6 +332,8 @@ def plot_prevalence_fit(df, label, outpath, kind="arm", tg=None, stamp=None):
 #     (1 - prevalence), which at Eswatini's prevalence is a ~30% error.
 
 INC_TARGETS = "calibration_data/incidence_by_age_sex.csv"
+# The excluded age bands. Not a target sheet -- see incidence_construction.py.
+INC_REFERENCE = "data/shims2_incidence_by_age_REFERENCE_NOT_A_TARGET.csv"
 INC_CUTOFF = 2017.0   # last year worth plotting: just past the 2016 target
 
 
@@ -346,19 +348,39 @@ def load_inc_targets(path=None):
     return pd.read_csv(root / (path or INC_TARGETS))
 
 
-def _inc_series(df, sex, lo, hi):
-    """Annual incidence % over time for one sex and age range, over susceptibles."""
+def load_inc_reference(path=None):
+    """The excluded SHIMS2 age bands, for reference panels only. Never a target."""
+    root = Path(__file__).parent
+    f = root / (path or INC_REFERENCE)
+    return pd.read_csv(f) if f.exists() else pd.DataFrame()
+
+
+def _inc_series(df, sex, lo, hi, prorate_first=1.0):
+    """Annual incidence % over time for one sex and age range, over susceptibles.
+
+    `prorate_first` down-weights the FIRST 5-year band's person-time, which is
+    how an 18-49 estimate is expressed on 5-year bands: 18-19 is 2/5 of 15-19,
+    so prorate_first=0.4. Assumes incidence is roughly flat within that band and
+    needs no assumption about 15-17, because both the survey and the pro-rated
+    estimate exclude them.
+
+    Without this, run.py compared a model 15-50 estimate to SHIMS1's 18-49
+    target. That flipped the sign of the 2011 male residual, because male
+    incidence is near zero at 15-19 and including it dilutes the average.
+    """
     lo, hi = (lo // 5) * 5, -(-hi // 5) * 5
     new = alv = inf = None
-    for b in range(lo, hi, 5):
+    for i, b in enumerate(range(lo, hi, 5)):
+        w = prorate_first if i == 0 else 1.0
         nc = f"popagesex.new_infections_{sex}_{b}_{b + 5}"
         if nc not in df.columns:
             return None
-        new = df[nc] if new is None else new + df[nc]
-        alv = df[f"popagesex.n_alive_{sex}_{b}_{b + 5}"] if alv is None \
-            else alv + df[f"popagesex.n_alive_{sex}_{b}_{b + 5}"]
-        inf = df[f"popagesex.n_infected_{sex}_{b}_{b + 5}"] if inf is None \
-            else inf + df[f"popagesex.n_infected_{sex}_{b}_{b + 5}"]
+        n_ = w * df[nc]
+        a_ = w * df[f"popagesex.n_alive_{sex}_{b}_{b + 5}"]
+        i_ = w * df[f"popagesex.n_infected_{sex}_{b}_{b + 5}"]
+        new = n_ if new is None else new + n_
+        alv = a_ if alv is None else alv + a_
+        inf = i_ if inf is None else inf + i_
     susc = alv - inf
     return 100.0 * new / susc.where(susc > 0)
 AGG_INC = "data/eswatini_ppdv.csv"
@@ -463,40 +485,38 @@ def plot_incidence_fit(df, label, outpath, kind="arm", tg=None, stamp=None,
         ax.annotate(f"{r.Inc:.2f}  {r.AgeCat}", (r.Year, r.Inc),
                     textcoords="offset points", xytext=(10, -3), fontsize=7,
                     color="black")
+        # Where the published range is not 15-49, put the MODEL on the survey's
+        # basis by pro-rating the first band, and plot that as the honest
+        # comparison. 18-19 is 2/5 of 15-19, so prorate_first=0.4. Adjusting the
+        # data the other way would need a 15-17 incidence we have no source for.
         lo_age = int(str(r.AgeCat).split("-")[0])
         if lo_age == 15:
             continue
         mismatch = True
-        brack = []
-        for a in (15, 20):     # 5-year bands cannot express 18; bracket it
-            s = _inc_series(df[np.floor(df.timevec) == r.Year], sex=r.sex,
-                            lo=a, hi=50)
-            if s is None or not len(s):
-                continue
-            v = s.dropna()
-            brack.append(v.median() if kind == "ensemble" else v.mean())
-        if len(brack) == 2:
-            x = r.Year - 0.8
-            ax.vlines(x, min(brack), max(brack), color=cols[r.sex], lw=3.5,
-                      alpha=0.9, zorder=7)
-            ax.hlines([min(brack), max(brack)], x - 0.45, x + 0.45,
-                      color=cols[r.sex], lw=2, zorder=7)
-            ax.annotate(f"{min(brack):.2f}–{max(brack):.2f}", (x, min(brack)),
-                        textcoords="offset points", xytext=(-3, -11),
-                        ha="right", fontsize=7, color=cols[r.sex])
+        s = _inc_series(df[np.floor(df.timevec) == r.Year], sex=r.sex, lo=15,
+                        hi=50, prorate_first=(5 - (lo_age - 15)) / 5)
+        if s is None or not len(s):
+            continue
+        v = s.dropna()
+        pv = float(v.median() if kind == "ensemble" else v.mean())
+        ax.plot(r.Year - 0.75, pv, marker="D", ms=8, mfc=cols[r.sex],
+                mec=cols[r.sex], zorder=7)
+        ax.annotate(f"{pv:.2f}", (r.Year - 0.75, pv),
+                    textcoords="offset points", xytext=(-6, -3), ha="right",
+                    fontsize=7, color=cols[r.sex])
     ax.errorbar([], [], fmt="s", mfc="white", mec="black", mew=1.3, ms=9,
                 ecolor="black", capsize=4, label="SHIMS estimate (95% CI)")
     if mismatch:
-        ax.vlines([], [], [], color="grey", lw=3.5,
-                  label="model 15-49 to 20-49 bracket")
+        ax.plot([], [], marker="D", ms=8, ls="none", mfc="grey", mec="grey",
+                label="model on the survey's own\nage basis (18-49, pro-rated)")
     ax.axvline(cutoff, ls=":", c="grey", lw=1.2)
     ax.annotate(f"curve stops at {cutoff:.0f}", (cutoff, 0),
                 textcoords="offset points", xytext=(-5, 12), ha="right",
                 fontsize=7.5, color="grey", rotation=90)
     ax.set_xlabel("year"); ax.set_ylabel("HIV incidence (% per year)")
-    ax.set_title("Incidence by sex — model curve is 15-49\n"
-                 "2011 point is SHIMS1 18-49, so compare it to the bracket, "
-                 "not the curve", fontsize=9.5)
+    ax.set_title("Incidence by sex — curve is 15-49; the diamond is the model on\n"
+                 "SHIMS1's own 18-49 basis, which is what the 2011 square "
+                 "compares to", fontsize=9.5)
     ax.legend(fontsize=7.5, loc="upper right"); ax.set_ylim(bottom=0)
     ax.grid(alpha=0.3)
 
@@ -504,8 +524,9 @@ def plot_incidence_fit(df, label, outpath, kind="arm", tg=None, stamp=None,
     # `tg` now also carries the 15-49 aggregates as fitting rows, and a 35-year
     # "band" is an aggregate, not a band -- drawing it here made a whole-adult
     # average look like a fourth age stratum.
-    bands = tg[(tg.year == 2016) & ((tg.age_high - tg.age_low) < 25)]
-    not_fitted = "fit" in tg.columns and not bands.fit.any() if len(bands) else False
+    ref = load_inc_reference()
+    bands = ref[ref.year == 2016] if len(ref) else ref
+    not_fitted = True          # by construction: the reference file is not a target
     ymax = 0.0
     for k, sex in enumerate(("f", "m")):
         ax = axes[k + 1]
@@ -537,7 +558,7 @@ def plot_incidence_fit(df, label, outpath, kind="arm", tg=None, stamp=None,
                         label="hollow: CI reaches 0, no information")
         ax.set_xlabel("age"); ax.set_xlim(13, 52)
         ax.set_title(f"{names[sex]} — 2016 age profile"
-                     + ("\n(retained for reference — NOT fitted)"
+                     + ("\n(reference only — NOT a calibration target)"
                         if not_fitted else ""), fontsize=9.5)
         ax.legend(fontsize=7.5, loc="upper right"); ax.grid(alpha=0.3)
         if k == 0:
@@ -588,9 +609,10 @@ def plot_incidence_age_profile(df, label, outpath, years=(2011, 2016),
         # An "age band" spanning 25+ years is an AGGREGATE, not a band. SHIMS1's
         # only 2011 row is 18-49, and drawing it like a band would invite reading
         # a whole-adult average as a measured age profile.
-        b = tg[tg.year == year]
-        span = b.age_high - b.age_low
-        banded, aggregate = b[span < 25], b[span >= 25]
+        ref = load_inc_reference()
+        banded = ref[ref.year == year] if len(ref) else pd.DataFrame(
+            columns=["sex", "age_low", "age_high", "incidence_pct", "uninformative"])
+        aggregate = tg[tg.year == year]        # the fitted rows
         for _, t in banded.iterrows():
             ax.hlines(t.incidence_pct, t.age_low, min(t.age_high, age_max),
                       color="black", lw=2.2,

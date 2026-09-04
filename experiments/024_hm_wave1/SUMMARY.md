@@ -100,16 +100,35 @@ diagnosed a structural bias that opening `beta_m2f` largely removes.
    matched at 0.25, and the rest of the target set pulls higher. Worth resolving
    in wave 2 rather than declaring either number correct.
 
-7. **Incidence: 2011 is hit almost exactly; female 35–49 in 2016 is the one
-   target no draw reaches.** The SHIMS1 cohort estimates (women 3.14, men 1.65
-   per 100 py) land on the ensemble median. But `inc_f_35_50_2016` has a target of
-   2.09 against an ensemble 95th percentile of **1.087** — the entire prior is
-   below it, and the model's female incidence *declines* with age where SHIMS2
-   says it stays high. That is SHIMS2's own chapter conclusion ("new infections
-   continue at high rates among ... females aged 35–49") and the model cannot
-   produce it.
+7. **Incidence: the level is right in both years and both sexes. The female age
+   *profile* in 2016 is not.** This is a sharper diagnosis than "the model cannot
+   reach female 35–49 incidence", and it only became visible once the published
+   15–49 aggregates were plotted alongside the age bands:
 
-   ![Incidence against SHIMS by sex: 2011 cohort targets land on the median, but the model's female incidence declines with age where SHIMS2 2016 says it stays high](figures/incidence_fit_vs_shims.png)
+   | | model | published | source |
+   |---|---|---|---|
+   | 2011 women 18–49 | 3.1 | **3.14** (2.63–3.74) | SHIMS1 cohort |
+   | 2011 men 18–49 | 1.6 | **1.65** (1.28–2.11) | SHIMS1 cohort |
+   | 2016 women 15–49 | 1.7 | **1.73** (0.96–2.50) | SHIMS2 Table 5.3.B |
+   | 2016 men 15–49 | 0.85 | **0.85** (0.21–1.49) | SHIMS2 Table 5.3.B |
+
+   All four aggregates land essentially on the ensemble median. But within 2016
+   the model allocates female incidence to the wrong ages — **2.05 at 15–24
+   against a measured 1.67, and 0.35 at 35–49 against a measured 2.09.** Total
+   female incidence is correct; its distribution over age is not. So this is a
+   redistribution problem, not a transmission-level problem, and no amount of
+   `beta_m2f` will fix it — which is consistent with `inc_f_35_50_2016` being the
+   one target whose value the entire prior sits below (p95 = 1.087).
+
+   That is also SHIMS2's own chapter conclusion — "new HIV infections continue at
+   high rates among ... females aged 35–49" — and the model cannot produce it.
+
+   ![Incidence against SHIMS by sex: all four published 15-49 aggregates land on the ensemble median, but the model's 2016 female age profile is too high at 15-24 and far too low at 35-49](figures/incidence_fit_vs_shims.png)
+
+   The aggregates are plotted as a visual check only. They are deliberately
+   **not** registered as fitting targets, because the age bands in
+   `incidence_by_age_sex.csv` come from the same survey and registering both
+   would double-count it.
 
 8. **The residual structural defect is now two specific things, not a diffuse
    age-shape problem.** Of 48 targets the 5–95% envelope misses three:
@@ -199,10 +218,14 @@ band.
   is a per-act transmission parameter that a downstream PrEP-versus-treatment
   comparison is directly sensitive to.
 - **Ask whether older women's incidence needs a mechanism.** Obs 7 is the one
-  target nothing in the box reaches. The candidates are age mixing (older women
-  partnering older, higher-prevalence men) and the female partnering taper to
-  zero at 55 noted in 021. This is a model-structure question, not a calibration
-  one.
+  target nothing in the box reaches, and the fact that the *total* is right means
+  the mechanism has to move female risk from 15–24 to 35–49 rather than add
+  transmission. The candidates are age mixing (older women partnering older,
+  higher-prevalence men) and the female partnering taper to zero at 55 noted in
+  021. This is a model-structure question, not a calibration one — and it puts
+  `s_f_young` under suspicion, since obs 5 has the data endorsing an elevated
+  young-female susceptibility that may partly be compensating for female risk
+  being misallocated across age in the first place.
 
 ## Artifacts
 

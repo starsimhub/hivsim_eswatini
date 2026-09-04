@@ -509,3 +509,83 @@ def plot_incidence_fit(df, label, outpath, kind="arm", tg=None, stamp=None,
                  "2021 held out)", y=1.04, fontsize=11)
     fig.savefig(outpath, dpi=130, bbox_inches="tight")
     plt.close(fig)
+
+
+def plot_incidence_age_profile(df, label, outpath, years=(2011, 2016),
+                               kind="arm", age_max=65, tg=None, stamp=None):
+    """Modelled incidence across the full age range, by sex, one panel per year.
+
+    The banded figure (`plot_incidence_fit`) can only show incidence at the three
+    coarse bands SHIMS publishes, which hides the shape. This shows the model's
+    own 5-year resolution over 15-`age_max`, which is where the age profile is
+    actually legible.
+
+    2011 has no published age-stratified incidence at all -- SHIMS1 reports only
+    an 18-49 aggregate -- so that panel is model-only, and saying so is part of
+    the point. Where SHIMS2 bands exist (2016) they are overlaid as grey
+    segments spanning the band they average over, for reference only.
+    """
+    tg = load_inc_targets() if tg is None else tg
+    cols = {"f": "#c0392b", "m": "#2c6fbb"}
+    names = {"f": "Women", "m": "Men"}
+    edges = list(range(15, age_max, 5))
+
+    fig, axes = plt.subplots(1, len(years), figsize=(6.6 * len(years), 4.6),
+                             squeeze=False)
+    axes = axes[0]
+    ymax = 0.0
+    for ax, year in zip(axes, years):
+        for sex in ("f", "m"):
+            mid, c, lo_b, hi_b = [], [], [], []
+            for a in edges:
+                cc, l, h = _band_stat(df, sex, a, a + 5, year, kind)
+                mid.append(a + 2.5); c.append(cc); lo_b.append(l); hi_b.append(h)
+            ax.plot(mid, c, "-o", color=cols[sex], lw=2, ms=4,
+                    label=f"model — {names[sex]}", zorder=4)
+            ax.fill_between(mid, lo_b, hi_b, color=cols[sex], alpha=0.15, lw=0)
+            ymax = max(ymax, np.nanmax(np.asarray(hi_b, dtype=float)))
+        # An "age band" spanning 25+ years is an AGGREGATE, not a band. SHIMS1's
+        # only 2011 row is 18-49, and drawing it like a band would invite reading
+        # a whole-adult average as a measured age profile.
+        b = tg[tg.year == year]
+        span = b.age_high - b.age_low
+        banded, aggregate = b[span < 25], b[span >= 25]
+        for _, t in banded.iterrows():
+            ax.hlines(t.incidence_pct, t.age_low, min(t.age_high, age_max),
+                      color="black", lw=2.2,
+                      ls="--" if t.uninformative else "-", zorder=6)
+            ymax = max(ymax, t.incidence_pct)
+        for _, t in aggregate.iterrows():
+            ax.hlines(t.incidence_pct, t.age_low, min(t.age_high, age_max),
+                      color="grey", lw=1.4, ls=(0, (1, 2)), zorder=5)
+            ax.annotate(f"{names[t.sex]} {int(t.age_low)}-{int(t.age_high) - 1} "
+                        f"aggregate = {t.incidence_pct:.2f}",
+                        (min(t.age_high, age_max), t.incidence_pct),
+                        textcoords="offset points", xytext=(-4, 4), ha="right",
+                        fontsize=7, color="grey")
+            ymax = max(ymax, t.incidence_pct)
+        if len(banded):
+            ax.hlines([], [], [], color="black", lw=2.2,
+                      label="SHIMS2 band estimate")
+            if banded.uninformative.any():
+                ax.hlines([], [], [], color="black", lw=2.2, ls="--",
+                          label="SHIMS2 band, CI reaches 0")
+        if len(aggregate):
+            ax.hlines([], [], [], color="grey", lw=1.4, ls=(0, (1, 2)),
+                      label="SHIMS1 aggregate (no age detail published)")
+        if not len(banded):
+            ax.annotate("no published age-stratified incidence this year —\n"
+                        "the model profile is unconstrained by data",
+                        (0.5, 0.055), xycoords="axes fraction", ha="center",
+                        fontsize=8, color="grey")
+        ax.set_title(f"{year}", fontsize=11)
+        ax.set_xlabel("age"); ax.grid(alpha=0.3); ax.legend(fontsize=8)
+        ax.set_xlim(13, age_max + 2)
+    axes[0].set_ylabel("HIV incidence (% per year)")
+    for ax in axes:
+        ax.set_ylim(0, ymax * 1.1)
+    ttl = label if stamp is None else f"{label}\n{stamp}"
+    fig.suptitle(ttl + "   —   modelled incidence by age and sex, 5-year bands",
+                 y=1.03, fontsize=11)
+    fig.savefig(outpath, dpi=130, bbox_inches="tight")
+    plt.close(fig)

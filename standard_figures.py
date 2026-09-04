@@ -445,28 +445,67 @@ def plot_incidence_fit(df, label, outpath, kind="arm", tg=None, stamp=None,
         if (hi_b - lo_b).abs().sum() > 0:
             ax.fill_between(centre.index, lo_b.values, hi_b.values,
                             color=cols[sex], alpha=0.15, lw=0, zorder=1)
+    # The curve is 15-49 throughout, but SHIMS1's 2011 estimate is 18-49 and the
+    # model works in 5-year bands, so 18-49 is bracketable but not expressible.
+    # Overlaying the two without saying so is unfair in a sex-dependent
+    # direction: female incidence is already high at 15-19 so dropping that
+    # group barely moves the average, while male incidence is near zero there so
+    # dropping it RAISES the male estimate materially -- enough to flip the sign
+    # of the 2011 male residual. So where a data point is not on a 15-49 basis,
+    # draw the model's own bracket for that year.
+    mismatch = False
     for _, r in agg.iterrows():
         ax.errorbar(r.Year, r.Inc,
                     yerr=[[r.Inc - r.Inc_lb], [r.Inc_ub - r.Inc]],
                     fmt="s", mfc=cols[r.sex], mec="black", mew=1.3, ms=9,
                     ecolor="black", elinewidth=1.4, capsize=4, zorder=6,
                     label="_nolegend_")
-        ax.annotate(f"{r.Inc:.2f}", (r.Year, r.Inc), textcoords="offset points",
-                    xytext=(9, -3), fontsize=7.5, color="black")
+        ax.annotate(f"{r.Inc:.2f}  {r.AgeCat}", (r.Year, r.Inc),
+                    textcoords="offset points", xytext=(10, -3), fontsize=7,
+                    color="black")
+        lo_age = int(str(r.AgeCat).split("-")[0])
+        if lo_age == 15:
+            continue
+        mismatch = True
+        brack = []
+        for a in (15, 20):     # 5-year bands cannot express 18; bracket it
+            s = _inc_series(df[np.floor(df.timevec) == r.Year], sex=r.sex,
+                            lo=a, hi=50)
+            if s is None or not len(s):
+                continue
+            v = s.dropna()
+            brack.append(v.median() if kind == "ensemble" else v.mean())
+        if len(brack) == 2:
+            x = r.Year - 0.8
+            ax.vlines(x, min(brack), max(brack), color=cols[r.sex], lw=3.5,
+                      alpha=0.9, zorder=7)
+            ax.hlines([min(brack), max(brack)], x - 0.45, x + 0.45,
+                      color=cols[r.sex], lw=2, zorder=7)
+            ax.annotate(f"{min(brack):.2f}–{max(brack):.2f}", (x, min(brack)),
+                        textcoords="offset points", xytext=(-3, -11),
+                        ha="right", fontsize=7, color=cols[r.sex])
     ax.errorbar([], [], fmt="s", mfc="white", mec="black", mew=1.3, ms=9,
                 ecolor="black", capsize=4, label="SHIMS estimate (95% CI)")
+    if mismatch:
+        ax.vlines([], [], [], color="grey", lw=3.5,
+                  label="model 15-49 to 20-49 bracket")
     ax.axvline(cutoff, ls=":", c="grey", lw=1.2)
     ax.annotate(f"curve stops at {cutoff:.0f}", (cutoff, 0),
                 textcoords="offset points", xytext=(-5, 12), ha="right",
                 fontsize=7.5, color="grey", rotation=90)
     ax.set_xlabel("year"); ax.set_ylabel("HIV incidence (% per year)")
-    ax.set_title("Incidence 15-49 by sex\n2011 point is SHIMS1 18-49; 2016 is "
-                 "SHIMS2 15-49", fontsize=9.5)
-    ax.legend(fontsize=8, loc="upper right"); ax.set_ylim(bottom=0)
+    ax.set_title("Incidence by sex — model curve is 15-49\n"
+                 "2011 point is SHIMS1 18-49, so compare it to the bracket, "
+                 "not the curve", fontsize=9.5)
+    ax.legend(fontsize=7.5, loc="upper right"); ax.set_ylim(bottom=0)
     ax.grid(alpha=0.3)
 
     # --- Right: the 2016 age profile, one panel per sex --------------------------
-    bands = tg[tg.year == 2016]
+    # `tg` now also carries the 15-49 aggregates as fitting rows, and a 35-year
+    # "band" is an aggregate, not a band -- drawing it here made a whole-adult
+    # average look like a fourth age stratum.
+    bands = tg[(tg.year == 2016) & ((tg.age_high - tg.age_low) < 25)]
+    not_fitted = "fit" in tg.columns and not bands.fit.any() if len(bands) else False
     ymax = 0.0
     for k, sex in enumerate(("f", "m")):
         ax = axes[k + 1]
@@ -497,7 +536,9 @@ def plot_incidence_fit(df, label, outpath, kind="arm", tg=None, stamp=None,
                         ms=8, ecolor="black", capsize=4,
                         label="hollow: CI reaches 0, no information")
         ax.set_xlabel("age"); ax.set_xlim(13, 52)
-        ax.set_title(f"{names[sex]} — 2016 age profile", fontsize=9.5)
+        ax.set_title(f"{names[sex]} — 2016 age profile"
+                     + ("\n(retained for reference — NOT fitted)"
+                        if not_fitted else ""), fontsize=9.5)
         ax.legend(fontsize=7.5, loc="upper right"); ax.grid(alpha=0.3)
         if k == 0:
             ax.set_ylabel("HIV incidence (% per year)")
@@ -572,11 +613,11 @@ def plot_incidence_age_profile(df, label, outpath, years=(2011, 2016),
                           label="SHIMS2 band, CI reaches 0")
         if len(aggregate):
             ax.hlines([], [], [], color="grey", lw=1.4, ls=(0, (1, 2)),
-                      label="SHIMS1 aggregate (no age detail published)")
+                      label="adult aggregate (the fitted row)")
         if not len(banded):
             ax.annotate("no published age-stratified incidence this year —\n"
                         "the model profile is unconstrained by data",
-                        (0.5, 0.055), xycoords="axes fraction", ha="center",
+                        (0.97, 0.055), xycoords="axes fraction", ha="right",
                         fontsize=8, color="grey")
         ax.set_title(f"{year}", fontsize=11)
         ax.set_xlabel("age"); ax.grid(alpha=0.3); ax.legend(fontsize=8)

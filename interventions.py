@@ -87,7 +87,7 @@ def _normalize_age_bin_format(df):
 
 
 def make_interventions(vmmc_class=None, art_vls_coverage='phia',
-                       vls_stock_target=True):
+                       vls_stock_target=True, art_coverage=None):
     # Upstream sti.VMMC gained prevalence/stock-target semantics in stisim 1.5.9
     # -- the behaviour the in-repo VMMCPrevalenceTarget subclass existed to
     # supply. Exp 017 confirmed the two are behaviourally identical (circumcision
@@ -95,7 +95,15 @@ def make_interventions(vmmc_class=None, art_vls_coverage='phia',
     # deleted in exp 018. vmmc_class is kept as an injection point for A/B tests.
     vmmc_class = vmmc_class or sti.VMMC
 
-    art_data = _normalize_age_bin_format(pd.read_csv('data/art_coverage.csv'))
+    # art_coverage: override the measured ART coverage table. Needed for the
+    # decision analysis -- the cascade axis IS this table, and Eswatini's
+    # headroom is in coverage (0.650-0.970 by stratum) rather than in
+    # suppression among the treated, which is already 0.96+. Without an
+    # override there is no way to express a treatment scale-up scenario.
+    # Defaults to the measured series, so calibration behaviour is unchanged.
+    art_data = _normalize_age_bin_format(
+        pd.read_csv('data/art_coverage.csv') if art_coverage is None
+        else art_coverage)
     vmmc_data = _normalize_age_bin_format(pd.read_csv('data/vmmc_coverage.csv'))
     tests = get_testing_products()
 

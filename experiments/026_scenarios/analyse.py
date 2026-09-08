@@ -7,9 +7,11 @@ and infections averted against `baseline`. Counts are already at real
 population scale -- starsim Results carry scale=True by default, which is why
 the capacity check read n_on_art = 229,726 rather than a 10,000-agent count.
 
-The headline quantity is `prep_at_high_art` minus `art_95`: what long-acting
-PrEP buys AFTER the ART coverage gap is closed. Everything else is context for
-that subtraction.
+The headline quantity is the PrEP INCREMENT at high ART coverage, taken with
+the ART ramp held constant: `both` minus `art_95`. See contrasts() -- every
+reported difference is named in run.py::CONTRASTS with its comparator, because
+the two errors in the first version of this experiment were both differences
+between arms that differed in more than one thing.
 
 Uncertainty: seeds only. One parameter set means these intervals are Monte
 Carlo error, NOT parameter uncertainty. Reported as a seed range, never as a
@@ -32,14 +34,15 @@ FIG.mkdir(parents=True, exist_ok=True)
 
 WINDOW = (2026, 2040)
 ORDER = ["baseline", "prep_agyw", "prep_agyw_risk", "prep_fsw",
-         "art_95", "both", "prep_at_high_art"]
+         "art_95", "both", "art_95_early", "prep_at_high_art"]
 LABEL = {"baseline": "Baseline",
          "prep_agyw": "LEN 30% AGYW",
          "prep_agyw_risk": "LEN 30% AGYW (higher-risk)",
          "prep_fsw": "LEN 60% FSW",
          "art_95": "ART coverage to 95%",
          "both": "LEN + ART 95% (concurrent)",
-         "prep_at_high_art": "LEN added at ART 95%"}
+         "art_95_early": "ART 95% by 2025 (early)",
+         "prep_at_high_art": "LEN added at ART 95% (early)"}
 
 
 def load():
@@ -160,6 +163,38 @@ def headline(per_seed):
     return res
 
 
+def contrasts(per_seed):
+    """Every named contrast from run.py::CONTRASTS, paired by seed.
+
+    Reported from a named dict rather than assembled ad hoc, because the two
+    errors in the first version of this experiment were both differences taken
+    between arms that differed in more than one thing. Naming each contrast and
+    its comparator makes that visible instead of implicit.
+    """
+    sys.path.insert(0, str(HERE))
+    import run as R
+
+    rows = []
+    for name, (treat, comp) in R.CONTRASTS.items():
+        have = set(per_seed.arm)
+        if not {treat, comp} <= have:
+            rows.append(dict(contrast=name, treat=treat, comparator=comp,
+                             note="MISSING ARM"))
+            continue
+        t = per_seed[per_seed.arm == treat].set_index("seed").cum_inf
+        c = per_seed[per_seed.arm == comp].set_index("seed").cum_inf
+        diff = (c - t).dropna()
+        rows.append(dict(
+            contrast=name, treat=treat, comparator=comp,
+            averted=diff.mean(), sd=diff.std(ddof=1),
+            lo=diff.min(), hi=diff.max(),
+            pct_of_comparator=100 * diff.mean() / c.mean(),
+            seeds_positive=f"{int((diff > 0).sum())}/{len(diff)}"))
+    t = pd.DataFrame(rows)
+    t.to_csv(OUT / "contrasts.csv", index=False)
+    return t
+
+
 def plots(d, sc, per_seed):
     lo, hi = WINDOW
     fig, axes = plt.subplots(1, 3, figsize=(17, 4.8),
@@ -239,6 +274,12 @@ def main():
         print("    of people. Lower is better.")
         print(eff[["label", "py_prep", "averted_mean", "py_per_averted"]]
               .round(1).to_string(index=False))
+
+    ct = contrasts(per_seed)
+    print("\n=== Every named contrast, paired by seed ===")
+    print("    'averted' = comparator minus treat, so positive means the treat")
+    print('    arm has FEWER infections.')
+    print(ct.round(1).to_string(index=False))
 
     h = headline(per_seed)
     if h:

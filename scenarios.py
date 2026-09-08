@@ -118,7 +118,14 @@ def lenacapavir(coverage, eligibility="agyw", start=2026, scale_to=2030,
         prep_dur=ss.months(LEN_DUR_MONTHS),
         prep_adh=1.0,          # adherence is not the constraint for an injectable;
                                # discontinuation is, and that is `coverage` falling
-        coverage={"year": [start - 1, start, scale_to],
+        # Anchors start AT `start`, not at start-1. With a zero anchor at
+        # start-1 and a non-zero one at `start`, stisim interpolates across the
+        # intervening year's twelve monthly steps, so coverage is already ~90%
+        # of the `start` value by that December -- exp 026's verification caught
+        # 1,601 people on PrEP in 2025 for a scenario documented as starting in
+        # 2026. Small (0.3% of PrEP person-years, and outside the outcome
+        # window) but the design should be literally true.
+        coverage={"year": [start, start + 1, scale_to],
                   "value": [0.0, coverage * 0.1, coverage]},
         eligibility=elig,
     )

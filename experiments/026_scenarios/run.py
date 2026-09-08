@@ -21,6 +21,7 @@ uncertainty. The abstract must say so and must not report a credible interval.
 """
 
 import argparse
+import hashlib
 import sys
 import time
 from pathlib import Path
@@ -94,12 +95,32 @@ ARMS = {
     "prep_fsw":          ((0.60, "fsw"),           None),
     "art_95":            (None,                    (0.95, None)),
     "both":              ((0.30, "agyw"),          (0.95, None)),
+    # --- the "already at high coverage" pair. BOTH need the early cascade, or
+    # the difference between them is not the PrEP increment.
+    "art_95_early":      (None,                    (0.95, None)),
     "prep_at_high_art":  ((0.30, "agyw"),          (0.95, None)),
 }
-# prep_at_high_art is `both` with the cascade already achieved when PrEP starts,
-# rather than ramping alongside it. The headline quantity is
-# prep_at_high_art - art_95: what prevention buys AFTER the coverage gap closes.
-ARM_OVERRIDES = {"prep_at_high_art": dict(cascade_start=2020, cascade_reach=2025)}
+# prep_at_high_art has the cascade ALREADY achieved when PrEP starts, rather
+# than ramping alongside it. That needs a matched no-PrEP control on the same
+# early cascade -- art_95_early -- which the first version of this experiment
+# lacked. Without it, prep_at_high_art - art_95 mixed the PrEP effect with six
+# extra years of ART scale-up (ART coverage 0.948 vs 0.918 at 2025) and
+# overstated the PrEP increment as 8,757 against a true 5,445.
+EARLY = dict(cascade_start=2020, cascade_reach=2025)
+ARM_OVERRIDES = {"prep_at_high_art": EARLY, "art_95_early": EARLY}
+
+# Every reported contrast, named, so a difference can never be read off two
+# arms that differ in more than one thing. Consumed by analyse.py.
+CONTRASTS = {
+    "prep_only_agyw":      ("prep_agyw", "baseline"),
+    "prep_only_agyw_risk": ("prep_agyw_risk", "baseline"),
+    "prep_only_fsw":       ("prep_fsw", "baseline"),
+    "cascade_only":        ("art_95", "baseline"),
+    "prep_plus_cascade":   ("both", "baseline"),
+    # the two that answer "does prevention still matter at high coverage"
+    "prep_increment_at_95":       ("both", "art_95"),
+    "prep_increment_at_95_early": ("prep_at_high_art", "art_95_early"),
+}
 
 
 def make_arm_kwargs(arm):
@@ -124,8 +145,35 @@ def make_arm_kwargs(arm):
     return kw
 
 
+def arm_fingerprint(arm):
+    """Hash of everything that defines an arm's interventions.
+
+    The cache key MUST include this. run_key was originally just
+    arm/pset/seed, so changing a coverage ramp left the cached parquet valid by
+    name and a re-run silently skipped it -- exactly the failure that bit exp
+    025 when N_AGENTS changed. Fingerprinting the realised specs means editing
+    scenarios.py invalidates only the arms it actually affects.
+    """
+    prep_spec, casc = ARMS[arm]
+    ov = ARM_OVERRIDES.get(arm, {})
+    parts = [repr(prep_spec), repr(casc), repr(sorted(ov.items())),
+             f"len_eff={S.LEN_EFF}", f"len_dur={S.LEN_DUR_MONTHS}",
+             f"scen={SCEN_START}-{SCEN_REACH}", f"stop={STOP}"]
+    kw = make_arm_kwargs(arm)
+    for k in sorted(kw):
+        v = kw[k]
+        if isinstance(v, pd.DataFrame):
+            parts.append(f"{k}:{pd.util.hash_pandas_object(v, index=False).sum()}")
+        elif k == "extra_interventions":
+            for iv in v:
+                parts.append(f"{k}:{iv.name}:{sorted(iv.pars.items(), key=str)}")
+        else:
+            parts.append(f"{k}:{v!r}")
+    return hashlib.sha1("|".join(parts).encode()).hexdigest()[:8]
+
+
 def run_key(arm, pset, pidx, seed):
-    return f"{arm}__{pset}{pidx:03d}__{seed:03d}"
+    return f"{arm}__{arm_fingerprint(arm)}__{pset}{pidx:03d}__{seed:03d}"
 
 
 def _one(arm, pset, pidx, seed):

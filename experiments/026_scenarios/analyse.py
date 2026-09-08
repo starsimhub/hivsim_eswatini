@@ -37,7 +37,7 @@ LABEL = {"baseline": "Baseline",
          "prep_agyw": "LEN 30% AGYW",
          "prep_agyw_risk": "LEN 30% AGYW (higher-risk)",
          "prep_fsw": "LEN 60% FSW",
-         "art_95": "ART coverage → 95%",
+         "art_95": "ART coverage to 95%",
          "both": "LEN + ART 95% (concurrent)",
          "prep_at_high_art": "LEN added at ART 95%"}
 
@@ -93,7 +93,8 @@ def scorecard(d):
     per_seed = (w.groupby(["arm", "seed"])
                   .agg(cum_inf=("new_inf", "sum"),
                        cum_inf_f=("new_inf_f", "sum"),
-                       cum_inf_m=("new_inf_m", "sum"))
+                       cum_inf_m=("new_inf_m", "sum"),
+                       py_prep=("hiv.n_on_prep", "sum"))
                   .reset_index())
     base = per_seed[per_seed.arm == "baseline"].set_index("seed")
 
@@ -111,7 +112,16 @@ def scorecard(d):
             averted_mean=av.mean(), averted_sd=av.std(ddof=1),
             averted_min=av.min(), averted_max=av.max(),
             pct_averted=100 * av.mean() / base.cum_inf.mean(),
-            female_share=100 * g.cum_inf_f.mean() / g.cum_inf.mean()))
+            female_share=100 * g.cum_inf_f.mean() / g.cum_inf.mean(),
+            py_prep=g.py_prep.mean(),
+            # Person-years on PrEP per infection averted -- the efficiency
+            # metric, and the only fair way to compare arms that cover
+            # different NUMBERS of people. `prep_agyw_risk` is 30% of a
+            # smaller group, so it covers 0.39x the person-years of
+            # `prep_agyw` and averts less in total while being MORE efficient
+            # per person. Comparing totals alone would read that backwards.
+            py_per_averted=(g.py_prep.mean() / av.mean()
+                            if av.mean() > 0 else np.nan)))
     sc = pd.DataFrame(rows)
     sc.to_csv(OUT / "scorecard.csv", index=False)
     per_seed.to_csv(OUT / "per_seed.csv", index=False)
@@ -119,12 +129,25 @@ def scorecard(d):
 
 
 def headline(per_seed):
-    """prep_at_high_art - art_95, paired by seed: PrEP's value at high coverage."""
+    """What PrEP adds on top of ART at 95%, with ART TIMING HELD CONSTANT.
+
+    CORRECTED. The obvious comparison, prep_at_high_art - art_95, is
+    CONFOUNDED: prep_at_high_art was defined with its cascade starting in 2020
+    rather than 2026, so it also carries six extra years of ART scale-up. Its
+    ART coverage is 0.948 at 2025 against 0.918 in art_95, and the difference
+    came out at 8,757 -- of which only part is PrEP.
+
+    `both` has the SAME 2026-2030 ART ramp as `art_95` and adds PrEP on top, so
+    `both - art_95` isolates the PrEP increment. That is 5,445, not 8,757.
+
+    prep_at_high_art is still reported, as the "earlier and harder cascade
+    push, plus PrEP" arm it actually is -- but it is not the headline.
+    """
     have = set(per_seed.arm)
-    if not {"prep_at_high_art", "art_95"} <= have:
+    if not {"both", "art_95"} <= have:
         return None
     a = per_seed[per_seed.arm == "art_95"].set_index("seed").cum_inf
-    b = per_seed[per_seed.arm == "prep_at_high_art"].set_index("seed").cum_inf
+    b = per_seed[per_seed.arm == "both"].set_index("seed").cum_inf
     diff = (a - b).dropna()
     base = per_seed[per_seed.arm == "baseline"].set_index("seed").cum_inf
     res = dict(mean=diff.mean(), sd=diff.std(ddof=1),
@@ -209,9 +232,17 @@ def main():
               "averted_sd", "pct_averted", "female_share"]]
           .round(1).to_string(index=False))
 
+    eff = sc[(sc.py_prep > 0)]
+    if len(eff):
+        print("\n=== PrEP efficiency (person-years on PrEP per infection averted) ===")
+        print("    The fair comparison between arms that cover different numbers")
+        print("    of people. Lower is better.")
+        print(eff[["label", "py_prep", "averted_mean", "py_per_averted"]]
+              .round(1).to_string(index=False))
+
     h = headline(per_seed)
     if h:
-        print("\n=== HEADLINE: what LEN adds after ART reaches 95% ===")
+        print("\n=== HEADLINE: what LEN adds ON TOP of ART 95% ===")
         print(f"  infections averted: {h['mean']:,.0f} "
               f"(seed range {h['lo']:,.0f} to {h['hi']:,.0f}, "
               f"SD {h['sd']:,.0f}, n={h['n_seeds']})")
@@ -219,6 +250,15 @@ def main():
         print(f"  = {h['pct_of_remaining']:.1f}% of those REMAINING once "
               f"ART is at 95%")
         print(f"  positive in {h['n_seeds_positive']}/{h['n_seeds']} seeds")
+        conf = per_seed[per_seed.arm == "prep_at_high_art"]
+        if len(conf):
+            a = per_seed[per_seed.arm == "art_95"].set_index("seed").cum_inf
+            c = conf.set_index("seed").cum_inf
+            print(f"\n  For contrast, prep_at_high_art - art_95 = "
+                  f"{(a - c).mean():,.0f} -- but that arm's cascade starts in "
+                  f"2020, so it carries six extra years of ART scale-up "
+                  f"(coverage 0.948 vs 0.918 at 2025) and is NOT the PrEP "
+                  f"increment.")
         if h["n_seeds_positive"] < h["n_seeds"] * 0.9:
             print("  NOTE: not consistently positive across seeds -- the effect "
                   "is within Monte Carlo noise at this seed count.")

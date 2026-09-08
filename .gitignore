@@ -20,3 +20,9 @@ experiments/*/outputs/
 
 # Reference material: source PDFs + DHS microdata (large; license-restricted; kept local)
 references/
+
+# Simulation output archived alongside an experiment (large; regenerate from code)
+experiments/*/outputs_*/
+
+# Built decks are binaries; the scripts that build them are tracked instead
+presentations/*.pptx

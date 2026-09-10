@@ -1,0 +1,146 @@
+# Experiment 025 — History matching, wave 2 (+ re-identification pre-flight)
+#
+# Recorded 2026-09-10, at launch, from the machine the run executed on. 025 had
+# no config.yaml until then; CLAUDE.md requires the model tag recorded here, and
+# 023/024 both have one.
+
+experiment: 025_hm_wave2
+question: >
+  Can the pipeline separate beta_m2f from s_f_young at all; does incidence (a
+  rate) constrain what prevalence (a stock) cannot; and does the NROY tighten
+  when sigma_disc is halved, or collapse?
+
+environment:
+  model_tag: model-v1.3
+  stisim: 1.5.11
+  starsim: 3.5.2
+  historymatching: 2.0.1
+  python: "3.12.3"
+  repo_branch: docs/pre-calibration-release
+  repo_head: 493ceaf
+  branch_note: >
+    Model-identical to main at launch. The only .py differences ahead of main
+    are under presentations/ (deck-building code); no model code differs. This
+    branch was chosen over main because commit 27eb60a drops
+    [tool.uv.sources], so the repo is clone-and-run on a fresh VM without
+    sibling starsim/stisim checkouts.
+
+  # --- The reproducibility trap, recorded because it silently bit this run ----
+  version_pinning: >
+    pyproject.toml constrains starsim>=3.5.2 and stisim>=1.5.11 — GREATER-THAN,
+    not equality. On a fresh `uv sync` on raccoon (2026-09-10) that resolved to
+    starsim 3.6.1 / stisim 1.6.1, NOT the model-v1.3 stack. LAUNCH.md expects
+    3.5.2 / 1.5.11 and would have caught it only if read. The venv was pinned
+    back with `uv pip install starsim==3.5.2 stisim==1.5.11` before launch, and
+    the run uses `uv run --no-sync` so the pin is not undone mid-run.
+    Consequence if unnoticed: 025 would have identified parameters under a model
+    version that neither 024 (which supplied the re-identification truth) nor
+    026 (which consumes the NROY sample) ran on. 1.5.11 was verified
+    behaviourally neutral in exp 018; 1.6.1 is unverified.
+    Fix for the next experiment: pin with == in pyproject, or restore
+    [tool.uv.sources].
+
+compute:
+  machine: raccoon
+  cores: 120
+  n_workers: 120
+  launched: 2026-09-10T19:00:06Z
+  budget: ~40 min for both parts (024 did 1000 points in 456 s at N = 10,000)
+  session: tmux w2, log at ~/w2.log
+  note: >
+    Spot-priced. Per-point parquet is cached under outputs/sims/ keyed on the
+    parameter values plus N, stop year and seed, so a reclaimed run resumes with
+    --resume at no cost for completed work.
+
+# --- Design -------------------------------------------------------------------
+
+design:
+  n_points: 1000            # per wave, drawn from the previous NROY by the engine
+  n_agents: 20_000          # up from 024's 10,000; wave-2 features are age-stratified (020)
+  replicates: 1
+  stop_year: 2026
+  threshold: 4.0            # raised from 3.0 for known structural misspecification
+  emulator: bayes_linear    # fall back to gpr if R2 < 0.8
+  max_waves: 3
+  random_seed: 20260907
+  sim_seed: 1
+  truth_seed: 7             # NOT sim_seed: the synthetic target must carry one
+                            # replicate of noise, not be the model's own output
+
+# --- Features -----------------------------------------------------------------
+
+features:
+  applied: simultaneously   # ManualFeatureSelection(list) emulates EVERY listed
+                            # feature in EVERY wave; successive waves re-draw the
+                            # design inside the surviving NROY. It is not a
+                            # per-wave schedule.
+  list:
+    - name: prev_15_49_all_mean
+      target: 0.2844
+      sigma: 0.0112
+      job: adult prevalence, carried from 024 so the cut stays comparable
+    - name: inc_all_mean
+      target: 1.8425
+      sigma: 0.3551
+      job: >
+        mean of the four fitted sex-specific incidence aggregates. A rate, where
+        prevalence is a stock confounding rate with mortality, ART and cohort
+        history.
+    - name: prev_young_old_f_mean
+      target: 0.5033
+      sigma: 0.0755
+      job: >
+        female 15-24 : 35-44 prevalence ratio over the three PHIA years — the
+        statistic that separates s_f_young from beta_m2f.
+  known_defect: >
+    run.py:558-559 print "wave 1 emulates: ..." / "wave 2 emulates: ..." — stale
+    labels from the pre-correction design. run.py:566 passes all three features
+    as one list, so all three are emulated simultaneously. The log line is
+    misleading, the code is correct. Do not read w2.log as a per-wave schedule.
+  deferred_to_wave_3:
+    - F:M prevalence ratio
+    - F:M incidence ratio   # pins rel_beta_f2m; 024 obs 6's open question
+
+# --- Observation uncertainty ---------------------------------------------------
+
+sigma:
+  observations_registered: 46   # tier A 8, B 14, C 24
+  prevalence: sqrt(sigma_CI^2 + 0.01^2)   # sigma_disc HALVED from 024's 0.02
+  incidence: sqrt(sigma_CI^2 + (0.10 * target)^2)   # discrepancy term added
+  prevalence_ratios: 0.15       # relative
+  fm_incidence_ratio: 0.35
+  peak_aids_deaths: 2000        # deliberate down-weighting, unchanged
+  sigma_disc_prev_rationale: >
+    024 set 0.02 to absorb a -4.3 pp prevalence deficit it then showed was a
+    parameter-value deficit, not structural. 0.02 dominated PHIA's own
+    0.0043-0.0066 sampling error. Halving is worth roughly 5x the cutting power.
+    Not zero: 024 obs 8 leaves male 15-24 prevalence genuinely unreachable.
+
+# --- Why this does not resume from 024 -----------------------------------------
+
+supersedes: >
+  024's 87.2% NROY was computed at sigma_disc = 0.02. Layering a wave at 0.01 on
+  top would mix two uncertainty budgets in one NROY, so 025 runs as a fresh
+  two-wave job. 024's emulator quality, coverage result, 48/48 joint fit and
+  constrained-directions diagnostic all stand — none depended on the NROY volume.
+
+# --- What the gate must be read for --------------------------------------------
+
+gate_reading_order:
+  1: >
+    Is truth inside the NROY on every parameter, and is the beta_m2f/s_f_young
+    RATIO recovered as well as the PRODUCT? Product-only means wave 2's marginals
+    in those directions are jointly constrained only. Pre-registered.
+  2: >
+    age_gap_sd_mult recovery. Added 2026-09-10 from exp 026's SUMMARY: the
+    decision quantity is what PrEP buys AGYW 15-24 after the cascade closes,
+    while the coverage gap being closed is in men 25-34 — the link is who AGYW
+    acquire from across the age gap. No feature in the set is an age-mixing
+    statistic, so these are the parameters the features inform least. The smoke
+    run had log_age_gap_sd_mult as the one parameter whose truth fell outside the
+    NROY; at n=25 with 12 NROY samples that is noise, not a result.
+  3: per-feature emulator R2 — drop anything under 0.8 rather than carrying it.
+  4: >
+    NROY fraction. Under 5% or the engine's "NROY space collapsed" warning at
+    n=1000: suspect sigma_disc = 0.01 before suspecting the model. 024's scan
+    predicts only 8.4% survive on prevalence alone at that sigma.

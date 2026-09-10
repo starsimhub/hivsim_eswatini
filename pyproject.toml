@@ -31,6 +31,17 @@ dev = [
     "ruff",
 ]
 
-[tool.uv.sources]
-starsim = { path = "../../star_sim/starsim", editable = true }
-stisim = { path = "../../star_sim/stisim", editable = true }
+# No [tool.uv.sources]: starsim and stisim resolve from PyPI so the repo is
+# clone-and-run. They used to point at editable checkouts two directories up,
+# which only worked on machines laid out like the original author's -- flagged
+# in CLAUDE.md as "revisit before experiment 009" and still biting at 026.
+#
+# The local checkout this project was developed against sits on an unmodified
+# stisim v1.5.11, so PyPI gives identical behaviour; every fix this project
+# once carried locally (the exp-002 ART allocation bug, the exp-005 VMMC
+# semantics) has since been absorbed upstream.
+#
+# To develop against local checkouts instead, add back:
+#   [tool.uv.sources]
+#   starsim = { path = "/path/to/starsim", editable = true }
+#   stisim  = { path = "/path/to/stisim",  editable = true }

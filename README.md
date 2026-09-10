@@ -7,34 +7,63 @@ The model includes a structured sexual network with risk groups, HIV transmissio
 ## [Project Docs](hivsim_swz_docs.md)
 
 
-## Prerequisites
+## Getting started
 
-1. **Python 3.9+** (we recommend [Miniforge](https://github.com/conda-forge/miniforge))
+Requires **Python 3.11+** (3.11 is a hard floor: starsim 3.5.2 needs it, and
+3.10 makes the dependency set unresolvable).
 
-2. **Install Starsim and STIsim** by cloning and installing locally:
-   ```bash
-   git clone https://github.com/starsimhub/starsim.git
-   cd starsim
-   pip install -e .
-   cd ..
+```bash
+git clone https://github.com/starsimhub/hivsim_eswatini.git
+cd hivsim_eswatini
+uv sync                 # or: pip install -e .
+```
 
-   git clone https://github.com/starsimhub/stisim.git
-   cd stisim
-   pip install -e .
-   cd ..
-   ```
+That is everything. starsim and stisim install from PyPI at the versions this
+project was built against; you do not need to clone them separately.
 
-   Installing with `-e` (editable mode) means changes to the source code take effect immediately without reinstalling.
+Check it works — this runs a small five-year simulation in under a minute:
 
-3. **Clone this repo**:
-   ```bash
-   git clone https://github.com/starsimhub/hivsim_eswatini.git
-   cd hivsim_eswatini
-   ```
+```python
+import run_sims
+sim = run_sims.make_sim(seed=1, start=1985, stop=1990)
+sim.pars.n_agents = 500
+sim.run()
+```
 
-4. **Raw data** (not tracked in git): place the `raw_data/` folder in the repo root. This contains UNAIDS Excel files, PHIA survey CSVs, and population data. Ask the project lead for access.
+A full run is 1985–2031 at 10,000 agents and takes roughly two minutes.
 
-5. **IDE setup**: We recommend [VS Code](https://code.visualstudio.com/) with the Python and [Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropics.claude-code) extensions. Open the `hivsim_eswatini` folder as your workspace. You can run any script by opening it and pressing the play button, or by using the integrated terminal.
+### What you do and do not need
+
+All model inputs are tracked: `data/`, `calibration_data/` and
+`external_data/` are in the repo, so the model runs from a clean clone.
+
+`raw_data/` is **not** tracked and is **not** needed to run anything. It holds
+the source UNAIDS spreadsheets and PHIA survey extracts, and is used only by
+`utils.py` to regenerate the CSVs in `data/`. Ask the project lead if you need
+to rebuild inputs from source rather than use the committed ones.
+
+`experiments/*/outputs/` is likewise untracked. Each experiment regenerates
+its own outputs from `run.py`.
+
+### Working against local starsim / stisim
+
+If you are developing starsim or stisim alongside this project, point uv at
+your checkouts by adding to `pyproject.toml`:
+
+```toml
+[tool.uv.sources]
+starsim = { path = "/path/to/starsim", editable = true }
+stisim  = { path = "/path/to/stisim",  editable = true }
+```
+
+This used to be committed with paths hardcoded two directories up, which only
+resolved on the original author's machine. If you add it back, keep it local.
+
+### IDE
+
+[VS Code](https://code.visualstudio.com/) with the Python and
+[Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropics.claude-code)
+extensions. Open `hivsim_eswatini` as the workspace root.
 
 
 ## Workflow

@@ -1,0 +1,111 @@
+# Experiment 027 — History matching, wave 2 (+ re-identification pre-flight)
+#
+# A re-run of 025 against model-v1.4. Same questions, features, sigma and design;
+# the model version is the only scientific difference.
+
+experiment: 027_hm_wave2_v14
+supersedes: 025_hm_wave2   # crashed at wave 2 on an unfloored CD4 decline
+question: >
+  Can the pipeline separate beta_m2f from s_f_young at all; does incidence (a
+  rate) constrain what prevalence (a stock) cannot; and does the NROY tighten
+  when sigma_disc is halved, or collapse?
+
+environment:
+  model_tag: model-v1.4     # v1.3 + hiv_cd4_floor.HIVCD4Floor
+  stisim: 1.5.11
+  starsim: 3.5.2
+  historymatching: 2.0.1
+  python: "3.12.3"
+  repo_branch: docs/pre-calibration-release
+
+  model_change_from_v1_3: >
+    hiv_cd4_floor.HIVCD4Floor floors the acute-phase CD4 decline at the latent
+    set-point, matching what falling_decline and post_art_decline already do.
+    Upstream sti.HIV (1.5.11 and 1.6.1 alike) leaves acute_decline unfloored, so
+    an agent lingering in the acute state past the timestep rounding declines
+    through its set-point and across zero; make_p_hiv_death then indexes a
+    6-element rate array positionally via np.digitize against descending bins,
+    where index 6 is reachable only for cd4 < 0, and raises IndexError.
+    Demonstrated: upstream crosses zero on the second extra step, the fix holds
+    at the set-point indefinitely. On by default in run_sims.make_sim; pass
+    hiv_class=sti.HIV to restore the defect for an A/B.
+    Behaviourally a no-op where the floor does not bind — an identical seeded run
+    gives cum_infections 82943 either way.
+
+  version_pinning: >
+    pyproject.toml constrains starsim>=3.5.2 / stisim>=1.5.11 — GREATER-THAN, so
+    a clean `uv sync` resolves 3.6.1 / 1.6.1. Pin with
+    `uv pip install starsim==3.5.2 stisim==1.5.11` and run with
+    `uv run --no-sync`. See 025 SUMMARY obs 5. Fix properly by pinning == in
+    pyproject or restoring [tool.uv.sources].
+
+compute:
+  machine: raccoon
+  cores: 120
+  n_workers: 120
+  budget: ~40 min for both parts
+
+# --- Design (identical to 025) -------------------------------------------------
+
+design:
+  n_points: 1000
+  n_agents: 20_000
+  replicates: 1
+  stop_year: 2026
+  threshold: 4.0
+  emulator: bayes_linear    # fall back to gpr if R2 < 0.8
+  max_waves: 3
+  random_seed: 20260907
+  sim_seed: 1
+  truth_seed: 7
+
+features:
+  applied: simultaneously   # all three, every wave — not a per-wave schedule
+  list:
+    - {name: prev_15_49_all_mean,    target: 0.2844, sigma: 0.0112}
+    - {name: inc_all_mean,           target: 1.8425, sigma: 0.3551}
+    - {name: prev_young_old_f_mean,  target: 0.5033, sigma: 0.0755}
+  deferred_to_wave_3: [F:M prevalence ratio, F:M incidence ratio]
+
+sigma:
+  observations_registered: 46   # tier A 8, B 14, C 24
+  prevalence: sqrt(sigma_CI^2 + 0.01^2)
+  incidence: sqrt(sigma_CI^2 + (0.10 * target)^2)
+  prevalence_ratios: 0.15
+  fm_incidence_ratio: 0.35
+  peak_aids_deaths: 2000
+
+# --- Mechanical changes from 025, none scientific ------------------------------
+
+corrections:
+  cache_key_includes_model: >
+    point_key() now hashes the model tag and the starsim/stisim versions
+    alongside the parameters, N, stop year and seed. 025 obs 6: the key knew
+    nothing about the model, so a --resume after the v1.4 fix would have served
+    v1.3 results silently. Folder separation protects across experiments, not
+    across a model change inside one.
+  cache_state: >
+    Cold. 025's 2000 cached points were produced under v1.3 and are invalid here.
+    Do NOT copy them in.
+  log_labels: >
+    025 printed "wave 1 emulates / wave 2 emulates" while passing all three
+    features as one list. Now prints the actual list, plus the model tag and
+    stack versions.
+
+# --- What the gate must be read for --------------------------------------------
+
+gate_reading_order:
+  1: >
+    Truth inside the NROY on every parameter, and is the beta_m2f/s_f_young RATIO
+    recovered as well as the PRODUCT? Product-only means wave 2's marginals in
+    those directions are jointly constrained only. Pre-registered in 025.
+  2: >
+    age_gap_sd_mult recovery. From exp 026's SUMMARY: the decision quantity is
+    what PrEP buys AGYW 15-24 after the cascade closes while the coverage gap is
+    in men 25-34, so the link is who AGYW acquire from across the age gap. No
+    feature in the set is an age-mixing statistic.
+  3: per-feature emulator R2 — drop anything under 0.8 rather than carrying it.
+  4: >
+    NROY fraction. Under 5%, or the engine's "NROY space collapsed" warning at
+    n=1000: suspect sigma_disc = 0.01 before the model. 024's scan predicts 8.4%
+    survive on prevalence alone at that sigma.

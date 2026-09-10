@@ -67,6 +67,14 @@ class HIVCD4Floor(sti.HIV):
     which is the defect.
     """
 
+    def __init__(self, *args, name='hiv', **kwargs):
+        # Keep the upstream name 'hiv' so this is a true drop-in. Without it
+        # starsim names the module after the class and every intervention doing
+        # `sim.diseases.hiv` raises AttributeError — the same reason
+        # HIVMortalityMultiplier pins its name.
+        super().__init__(*args, **kwargs)
+        self.name = name
+
     def acute_decline(self, uids):
         """Acute CD4 decline, floored at the latent set-point.
 

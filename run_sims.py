@@ -12,6 +12,7 @@ import stisim as sti
 # From this repo
 from interventions import make_interventions
 from analyzers import hiv_epi
+from hiv_cd4_floor import HIVCD4Floor
 
 # Constants
 LOCATION = 'eswatini'
@@ -74,9 +75,16 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
         hiv_kwargs.update(hiv_pars)
     # hiv_class lets an experiment swap in an HIV subclass (e.g.
     # hiv_mortality.HIVMortalityMultiplier, which exposes the CD4 death rates as
-    # a calibration parameter). Defaults to upstream, so the model is unchanged
-    # unless a caller opts in — mirrors the vmmc_class injection point.
-    hiv = (hiv_class or sti.HIV)(**hiv_kwargs)
+    # a calibration parameter). Mirrors the vmmc_class injection point.
+    #
+    # The default is NOT upstream sti.HIV: it is hiv_cd4_floor.HIVCD4Floor, which
+    # floors the acute-phase CD4 decline at the latent set-point. Upstream lets
+    # that decline run past zero, and a negative CD4 makes the positional rate
+    # lookup in make_p_hiv_death raise IndexError — it crashed exp 025 at wave 2
+    # after 22 minutes. This is a fix, not a knob, so it is on by default;
+    # passing hiv_class=sti.HIV restores the defect for an A/B. See
+    # hiv_cd4_floor.py, and delete this default once the fix is upstream.
+    hiv = (hiv_class or HIVCD4Floor)(**hiv_kwargs)
 
     # Interventions
     # art_vls_coverage: viral suppression among ART initiators. Defaults to the

@@ -300,3 +300,79 @@ class Cascade(ss.Analyzer):
                 r[f'p_vls_{sex}_{rng}'][ti] = eff / inf if inf else np.nan
                 r[f'p_vls_given_art_{sex}_{rng}'][ti] = eff / art if art else np.nan
         return
+
+
+class CascadeByAge(ss.Analyzer):
+    """The 95-95-95 cascade by 5-year age band and sex, including `diagnosed`.
+
+    Exists because neither existing analyzer can produce the conditional
+    cascade. `Cascade` (above) omits `diagnosed` entirely and stratifies only
+    to 15-49 / 15+ by sex; `PopByAgeSex` has age bands but no treatment states.
+    So the first 95 -- awareness -- was not observable anywhere in this repo's
+    outputs before exp 029.
+
+    That matters more than a missing column, because awareness is a *hard
+    ceiling* on ART coverage in stisim, not a soft one. `ART` fills a
+    stratified coverage target only from `in_stratum & hiv.diagnosed &
+    ~hiv.on_art` (`hiv_interventions.py`), and nothing in the ART pathway can
+    set `hiv.diagnosed` -- only `HIVTest`/`ANCTest` do. An ART coverage target
+    above the diagnosed fraction is therefore silently unreachable: no warning,
+    no error, the run just lands short.
+
+    Counts only, no ratios
+    ----------------------
+    `Cascade` stores proportions per timestep, which cannot be averaged across
+    seeds without bias (the mean of ratios is not the ratio of means, and empty
+    strata inject NaN). This analyzer stores only counts, so downstream code
+    pools numerator and denominator across seeds *before* dividing. All four
+    conditioning sets the survey uses are recoverable from these four counts.
+
+    5-year bands, aggregated downstream
+    -----------------------------------
+    Bands are kept at 5-year resolution rather than at the survey's bins so one
+    run serves several groupings: SHIMS3 reports 15-24 / 25-34 / 35-49 / 50+,
+    while `data/art_coverage.csv` drives the model on [15,25) / [25,35) /
+    [35,45) / [45,100). Those disagree above 35, so any fixed choice here would
+    make one of the two comparisons impossible.
+
+    Added by exp 029.
+    """
+
+    AGE_BINS = [(a, a + 5) for a in range(15, 80, 5)] + [(80, 200)]
+    STATES = ('n_infected', 'n_diagnosed', 'n_on_art', 'n_effective_art')
+
+    def __init__(self, *args, name='cascadeage', **kwargs):
+        super().__init__(*args, **kwargs)
+        self.name = name
+
+    def init_results(self):
+        super().init_results()
+        res = []
+        for sex in ('f', 'm'):
+            for lo, hi in self.AGE_BINS:
+                for stem in self.STATES:
+                    res.append(ss.Result(f'{stem}_{sex}_{lo}_{hi}', dtype=int,
+                                         scale=True))
+        self.define_results(*res)
+        return
+
+    def step(self):
+        sim, ti = self.sim, self.ti
+        ppl, hiv = sim.people, sim.diseases.hiv
+        alive = ppl.alive
+        r = self.results
+
+        for sex, sex_bool in (('f', ppl.female), ('m', ppl.male)):
+            for lo, hi in self.AGE_BINS:
+                base = alive & sex_bool & (ppl.age >= lo) & (ppl.age < hi)
+                inf = base & hiv.infected
+                r[f'n_infected_{sex}_{lo}_{hi}'][ti] = inf.count()
+                # Conditioned on infected throughout: SHIMS reports the cascade
+                # among PLHIV, and `diagnosed` can in principle outlive a state
+                # change, so intersecting with `infected` keeps the model's
+                # numerators on the survey's denominator.
+                r[f'n_diagnosed_{sex}_{lo}_{hi}'][ti] = (inf & hiv.diagnosed).count()
+                r[f'n_on_art_{sex}_{lo}_{hi}'][ti] = (inf & hiv.on_art).count()
+                r[f'n_effective_art_{sex}_{lo}_{hi}'][ti] = (
+                    inf & hiv.on_effective_art).count()
+        return

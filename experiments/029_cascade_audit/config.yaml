@@ -1,0 +1,113 @@
+# Experiment 029 — Care cascade audit: the three conditional steps by age and sex
+#
+# Diagnostic, not a calibration. One parameter point, many seeds. Opened before
+# revisiting 028's wave-3 plan, because 026's headline result rests on a cascade
+# quantity nothing in this repo had ever reported.
+
+experiment: 029_cascade_audit
+follows: 028_hm_wave2_v15
+question: >
+  Decomposed into diagnosed|infected, on-ART|diagnosed and suppressed|on-ART,
+  where does the model's care cascade stand for 15-24 / 25-34 / 35-49 by sex,
+  and how does each step compare with the survey? And: is exp 026's art_95 arm
+  reachable, given that stisim can only treat agents it has already diagnosed?
+
+environment:
+  model_tag: model-v1.5
+  stisim: 1.5.11
+  starsim: 3.5.2
+  python: "3.14"           # local Windows laptop, system Python
+  repo_branch: docs/pre-calibration-release
+
+compute:
+  machine: local laptop
+  n_workers: 10
+  wall_time: 912 s for 20 seeds
+
+design:
+  n_agents: 20_000         # exp 020's floor; held from 028
+  n_seeds: 20              # up from 026's 10 — age x sex x cascade-step is finer
+  start: 1985
+  stop: 2031               # 2030 is 026's scenario horizon; +1 so 2030 completes
+  arms: [baseline]         # no scenario arms; this is the calibration baseline
+  parameters: single point — 024 design row 868 (the draw that fit 48/48 targets)
+  uncertainty_shown: between-seed only
+
+  why_one_point: >
+    028 showed the NROY's marginals are essentially the prior, so sampling it
+    would widen every interval here without making any more informative. The
+    cascade is driven by the testing ramps (interventions.py) and the ART
+    coverage table (data/art_coverage.csv), neither of which is a calibrated
+    parameter — so a point run answers the question and an ensemble would not.
+
+instrumentation:
+  new_analyzer: analyzers.CascadeByAge
+  records: [n_infected, n_diagnosed, n_on_art, n_effective_art]
+  strata: 5-year age bands 15-80 plus 80+, by sex
+  counts_not_ratios: >
+    Ratios are computed downstream from seed-pooled numerators and denominators.
+    `Cascade` stores per-timestep proportions, which cannot be averaged across
+    seeds without biasing small strata.
+  why_5_year_bands: >
+    SHIMS3 reports 15-24 / 25-34 / 35-49 / 50+; data/art_coverage.csv drives the
+    model on [15,25) / [25,35) / [35,45) / [45,100). Those disagree above 35, so
+    any fixed choice in the analyzer would make one comparison impossible.
+
+targets:
+  status: NOT fitting targets — this is a diagnostic comparison
+  new_data_file: data/eswatini_cascade_95s.csv
+  built_by: cascade_construction.py
+  source: >
+    SHIMS3 2021 report, Table 9.1.A (overall percentages) and Table 9.1.B
+    (conditional percentages), by sex and age. Extracted from
+    data/241123_SHIMS_ENG_RR3_Final-1.pdf, which had been in the repo unread.
+    Basis: self-report corrected by detectable ARV in blood. Tables 9.2.A/B are
+    the alternative VL<200 basis and are NOT mixed in.
+  validation: >
+    Conditional percentages must multiply to the overall ones; checked to 0.6 pp
+    in cascade_construction.py::check, which raises on failure. This is the only
+    guard against a mis-parse, since the PDF text layer has no table structure.
+  no_confidence_intervals: >
+    Neither table publishes CIs, only the percentage and unweighted denominator.
+    n_unweighted is carried so a binomial interval could be formed downstream,
+    but that would ignore survey weighting and design effect, so none is drawn.
+  coverage_years: >
+    The conditional cascade exists by age and sex for 2021 ONLY. For 2011 and
+    2016 the repo has on-ART|PLHIV (unconditional) by age and sex, and for 2016
+    VLS|PLHIV by 5-year band — but no awareness data in any year before 2021.
+
+sex_convention_hazard: >
+  data/art_coverage.csv is Gender 0 = FEMALE (stisim's convention, documented in
+  art_coverage_construction.py). calibration_data/art_coverage_by_age_sex.csv is
+  Gender 0 = MALE (the PHIA source's). The two files disagree. Getting it
+  backwards silently swaps the sexes and still yields a plausible figure.
+
+mechanism_under_test: >
+  stisim's ART fills a stratified coverage target only from
+  `in_stratum & hiv.diagnosed & ~hiv.on_art` (hiv_interventions.py:573). Nothing
+  in the ART pathway sets hiv.diagnosed — only HIVTest/ANCTest do, on fixed
+  ramps that no coverage target influences. Awareness is therefore a HARD
+  ceiling on ART coverage, and a target above it is silently unmet: no warning,
+  no error, the run simply lands short.
+  Within the diagnosed pool the opposite holds — the correction path ignores
+  both ti_art scheduling and the art_initiation probability, so anyone already
+  diagnosed can be treated instantly, including someone who previously declined.
+
+success_criteria:
+  good: >
+    First 95 plausible (~80-95% by 2021, lowest in young men), no material
+    unmet ART target under baseline, unconditional levels within a few points.
+  bad_and_most_consequential: >
+    A large silent shortfall in men 25-34 — which would mean 026's art_95 arm
+    was partly unachievable and its headline contrast needs re-reading.
+
+caveats:
+  art_coverage_is_an_input: >
+    on-ART|PLHIV is pinned to data by construction wherever the target is
+    attainable, so it is not evidence of fit. The informative quantities are the
+    first step (free) and the shortfall.
+  bin_35_49_is_not_clean: >
+    The ART coverage input is keyed on [35,45) and [45,100), so the model's
+    45-49 slice is driven by the 45+ band — an extrapolation for 2011/2016 and
+    50+-weighted for 2021 (art_coverage_construction.py). The 35-49 row is
+    reported as asked, with [35,45) alongside it.

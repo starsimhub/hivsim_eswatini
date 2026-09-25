@@ -10,9 +10,38 @@ import stisim as sti
 
 
 
-def get_testing_products():
+def get_testing_products(test_rate_m=1.0, test_rate_f=1.0):
     """
     Define HIV products and testing interventions
+
+    Args:
+        test_rate_m, test_rate_f: multipliers on the general-population testing
+            ramp, by sex. Both default to 1.0, which reproduces the single
+            sex-neutral rate every experiment through 029 ran with -- so this
+            argument changes nothing unless it is passed.
+
+    Why the general-population ramp is split by sex (exp 030)
+    ---------------------------------------------------------
+    Exp 029 measured the model's awareness against SHIMS3 2021 and found it too
+    high by up to 14.6 pp (men 25-34: 0.894 against 0.748), while ART coverage
+    among PLHIV matched to a mean of 1.4 pp -- because ART coverage is an input
+    and the linkage step absorbs the error silently.
+
+    Most of the sex difference in *awareness* is not behavioural: men acquire
+    HIV later, so their PLHIV stock at 25-34 is epidemiologically young (new
+    infections are 6.45% of the stock per year against women's 1.76%) and a
+    larger share has not yet had time to test. Correcting for that, the residual
+    difference in mean time-unaware is roughly 30%, not the 3.6x the unaware
+    fractions suggest. A modest sex split in the routine testing rate is
+    therefore the right correction; a never-testing subgroup is not supported by
+    the data and was considered and rejected in 029.
+
+    Because the ramp is linear from zero, scaling it by k is the same as fitting
+    its 2020 plateau: linspace(0, 0.5) * k == linspace(0, 0.5 * k). Early years
+    scale too, but in absolute terms barely (1995: 0.08 -> 0.04 at k = 0.5).
+
+    ANC testing is deliberately NOT scaled -- it is a real sex-specific route to
+    diagnosis, not a modelling artefact, and women should keep it.
     """
 
     scaleup_years = np.arange(1990, 2021)  # Years for testing
@@ -34,16 +63,31 @@ def get_testing_products():
         label='fsw_testing',
     )
 
-    # Non-FSW agents who haven't been diagnosed or treated yet
-    def other_eligibility(sim):
-        return ~sim.networks.structuredsexual.fsw & ~sim.diseases.hiv.diagnosed & ~sim.diseases.hiv.on_art
+    # Non-FSW agents who haven't been diagnosed or treated yet, split by sex so
+    # the two rates can differ. At test_rate_m == test_rate_f == 1.0 the union of
+    # these two is exactly the single `other_testing` that preceded them.
+    def other_eligibility_m(sim):
+        return (~sim.networks.structuredsexual.fsw & ~sim.diseases.hiv.diagnosed
+                & ~sim.diseases.hiv.on_art & sim.people.male)
 
-    other_testing = sti.HIVTest(
+    def other_eligibility_f(sim):
+        return (~sim.networks.structuredsexual.fsw & ~sim.diseases.hiv.diagnosed
+                & ~sim.diseases.hiv.on_art & sim.people.female)
+
+    other_testing_m = sti.HIVTest(
         years=years,
-        test_prob_data=gp_prob,
-        name='other_testing',
-        eligibility=other_eligibility,
-        label='other_testing',
+        test_prob_data=np.clip(gp_prob * test_rate_m, 0, 1),
+        name='other_testing_m',
+        eligibility=other_eligibility_m,
+        label='other_testing_m',
+    )
+
+    other_testing_f = sti.HIVTest(
+        years=years,
+        test_prob_data=np.clip(gp_prob * test_rate_f, 0, 1),
+        name='other_testing_f',
+        eligibility=other_eligibility_f,
+        label='other_testing_f',
     )
 
     # Agents whose CD4 count is below 200.
@@ -72,7 +116,8 @@ def get_testing_products():
         label='anc_testing',
     )
 
-    tests = [fsw_testing, other_testing, low_cd4_testing, anc_testing]
+    tests = [fsw_testing, other_testing_m, other_testing_f, low_cd4_testing,
+             anc_testing]
 
     return tests
 
@@ -87,7 +132,8 @@ def _normalize_age_bin_format(df):
 
 
 def make_interventions(vmmc_class=None, art_vls_coverage='phia',
-                       vls_stock_target=True, art_coverage=None):
+                       vls_stock_target=True, art_coverage=None,
+                       test_rate_m=1.0, test_rate_f=1.0):
     # Upstream sti.VMMC gained prevalence/stock-target semantics in stisim 1.5.9
     # -- the behaviour the in-repo VMMCPrevalenceTarget subclass existed to
     # supply. Exp 017 confirmed the two are behaviourally identical (circumcision
@@ -105,7 +151,8 @@ def make_interventions(vmmc_class=None, art_vls_coverage='phia',
         pd.read_csv('data/art_coverage.csv') if art_coverage is None
         else art_coverage)
     vmmc_data = _normalize_age_bin_format(pd.read_csv('data/vmmc_coverage.csv'))
-    tests = get_testing_products()
+    tests = get_testing_products(test_rate_m=test_rate_m,
+                                 test_rate_f=test_rate_f)
 
     # art_vls_coverage: fraction of ART initiators achieving viral suppression.
     # Defaults to 'phia' -- the measured series from vls_construction.py (SHIMS2

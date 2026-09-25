@@ -1,0 +1,114 @@
+# Experiment 030 — Fit the routine testing rate so model awareness matches SHIMS3
+#
+# Model-configuration fit, not an epidemiological calibration. Two parameters,
+# eight targets. The interesting question is question 2, not question 1.
+
+experiment: 030_testing_rate
+follows: 029_cascade_audit
+question: >
+  Can sex-specific routine testing rates reproduce the eight observed awareness
+  strata; and does ART coverage survive the correction, given that awareness is
+  a hard ceiling and SHIMS3 leaves as little as 0.2 pp of headroom between the
+  two?
+
+environment:
+  model_tag: model-v1.5+testsplit   # becomes model-v1.6 only if adopted
+  stisim: 1.5.11
+  starsim: 3.5.2
+  python: "3.14"
+  repo_branch: docs/pre-calibration-release
+
+model_change:
+  file: interventions.py
+  what: >
+    get_testing_products() gains test_rate_m / test_rate_f, and the single
+    general-population `other_testing` is split into `other_testing_m` and
+    `other_testing_f` with sex-restricted eligibility. Threaded through
+    make_interventions() and make_sim(). fsw_testing, low_cd4_testing and
+    anc_testing are untouched.
+  backwards_compatible: >
+    Both default to 1.0, which is the sex-neutral rate every experiment through
+    029 ran with. NOT bit-identical, though: two interventions draw from two
+    random streams where one drew from one, so k=1.0 differs from 029 by seed
+    noise. k=(1.0, 1.0) is included in the scan as the regression check -- it
+    must reproduce 029's awareness within seed noise or the split is not neutral.
+  anc_not_scaled: >
+    ANC testing is a real sex-specific route to diagnosis, not a modelling
+    artefact. Scaling it would be fitting away a mechanism that exists.
+
+design:
+  n_agents: 20_000
+  stop_fit: 2022        # only 2021 is needed for the fit; ~20% cheaper than 2031
+  stop_confirm: 2031    # 2030 is 026's horizon; regenerates 029's ceiling figures
+  start: 1985
+  seeds_scan: 3         # awareness has large denominators; 3 is enough to rank
+  seeds_confirm: 10
+  parameters: 024 design row 868 (as 026 and 029) — unchanged, not re-fitted
+
+  phase_1_1d_scans: >
+    k_m over [0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0] with k_f = 1.0, and k_f over
+    [0.3, 0.4, 0.5, 0.6, 0.8, 1.0] with k_m = 1.0. Justified by near-separability
+    -- each sex's testing rate affects the other's awareness only through
+    transmission, which is second-order for a 2021 stock.
+  phase_2_confirm: >
+    Joint run at the selected pair, 10 seeds, to 2031. Separability is an
+    assumption, so the joint awareness fit is re-checked here rather than
+    inferred from the two 1-D scans.
+
+targets:
+  what: 8 awareness strata — aware_of_all_plhiv, {f,m} x {15-24, 25-34, 35-49, 50+}
+  source: data/eswatini_cascade_95s.csv (SHIMS3 2021 Table 9.1.B, via exp 029)
+  year: 2021
+  objective: sum of squared error in percentage points, per sex for the 1-D scans
+  not_a_calibration_target: >
+    These do NOT enter the CLAUDE.md target list. This fits two model-
+    configuration parameters, not the epidemiological parameters 023-028 work
+    on. Prevalence, incidence and deaths are unaffected by construction --
+    awareness changes who is diagnosed, and ART coverage is forced to data
+    regardless.
+
+diagnostics:
+  primary: >
+    ART coverage target vs achieved, EVERY YEAR 2004-2030, every stratum. This
+    is the experiment's real output. 029 checked only survey years.
+  headroom_at_risk:
+    women_50plus: 0.002    # aware 0.968 vs on ART 0.966
+    women_35_49: 0.015
+    men_50plus: 0.017
+  shape_flag: >
+    Age-band residual pattern. Systematic ordering by age band implies the
+    assumed ramp SHAPE is wrong, not just its level. Report only -- it is
+    confounded with the model's age-at-infection distribution, which is
+    unconstrained (age-banded SHIMS incidence rows are fit=False for
+    false-recency bias). Same confounding as 028.
+  sanity_check: >
+    Implied mean time infection->diagnosis should land near the Little's-Law
+    estimate of ~2-4 years (men ~3.8, women ~2.8-3.0). That estimate assumes
+    steady state, which a ten-fold incidence decline violates and which biases
+    it upward, so it is a check on the fitted answer, not an input to it.
+
+success_criteria:
+  good: >
+    A (k_m, k_f) pair hits all eight awareness strata within a few points, ART
+    coverage still met in every stratum and every year, implied time-to-
+    diagnosis in the 2-4 year range.
+  informative_failure_1: >
+    ART coverage breaks in the tight strata. Would mean the model cannot
+    reproduce SHIMS3 awareness and SHIMS3 ART coverage simultaneously -- most
+    plausibly because its PLHIV duration structure differs from the survey's.
+    This is what the headroom table predicts and it is the likelier outcome.
+  informative_failure_2: >
+    Two rates cannot hit four age bands per sex. A single hazard per sex implies
+    a fixed relationship between 25-34, 35-49 and 50+. Failure is evidence for
+    the heterogeneity 029 rejected on level data alone -- the over-identification
+    paying off.
+  not_a_reason_to_rerun_here: >
+    Either failure is a RESULT. Do not add parameters inside this folder.
+
+open_limitation:
+  awareness_data_is_2021_only: >
+    SHIMS1 and SHIMS2 reports are not in the repo, so the ramp SHAPE is assumed
+    and 2021 data cannot test it -- awareness saturates, so long-infected
+    cohorts are ~100% aware under almost any history. If the earlier PDFs turn
+    up before this closes, STOP and re-scope: a multi-point trajectory makes the
+    shape identifiable and changes the design, not just the precision.

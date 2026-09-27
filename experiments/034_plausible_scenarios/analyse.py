@@ -406,6 +406,80 @@ def fig_xyz(grid):
     plt.close(fig)
 
 
+def fig_prep_by_counterfactual(grid, per_seed):
+    """PrEP's contribution under each cascade counterfactual -- the headline.
+
+    Adam's reframing, and it is the better instrument. Reporting cells by TOTAL
+    infections averted mixes the cascade's effect with PrEP's, and readers
+    misattribute the sum. The increment is also far tighter statistically: it is
+    paired by seed WITHIN a cascade rung, so the cascade effect cancels (SDs of
+    ~1,100-2,400 against ~3,500+ for total averted). And it does not depend on
+    where the cascade ceiling sits -- the question that has already been got
+    wrong twice.
+
+    Two panels because they answer different questions: the absolute increment
+    is what a budget buys, the share of remaining burden is the fair comparison
+    across counterfactuals whose denominators differ.
+    """
+    import matplotlib.patheffects as pe
+
+    cascs = [c for c in CASC_LAB if (grid.cascade == c).any()]
+    preps = [p for p in PREP_LAB if p != "P0_none"]
+    xpos = {c: i for i, c in enumerate(cascs)}
+
+    fig, axes = plt.subplots(1, 2, figsize=(15.5, 5.8))
+    panels = [("prep_increment", "Infections averted by PrEP, "
+               f"{WINDOW[0]}-{WINDOW[1]}", "{:,.0f}"),
+              ("prep_pct_of_residual",
+               "PrEP's share of the burden remaining (%)", "{:.1f}")]
+    for ax, (zcol, ylab, fmt) in zip(axes, panels):
+        # The bound is not a scenario; shade it out rather than dropping it, so
+        # the plausible rungs can be read against it without being confused for
+        # it.
+        if "S4_bound" in xpos:
+            ax.axvspan(xpos["S4_bound"] - 0.5, xpos["S4_bound"] + 0.5,
+                       color="#eceff1", zorder=0)
+        for p in preps:
+            g = grid[grid.prep == p].copy()
+            g["x"] = g.cascade.map(xpos)
+            g = g.sort_values("x")
+            ax.plot(g.x, g[zcol], "-o", ms=7, lw=2, color=PREP_COL[p],
+                    label=PREP_LAB[p], zorder=3)
+            for _, r in g.iterrows():
+                ax.annotate(fmt.format(r[zcol]), (r.x, r[zcol]),
+                            xytext=(0, 9), textcoords="offset points",
+                            fontsize=7, ha="center", color=INK, zorder=4,
+                            path_effects=[pe.withStroke(linewidth=2.4,
+                                                        foreground="white")])
+        # Name each counterfactual by what it is AND what suppression it reaches
+        labs = []
+        for c in cascs:
+            r = grid[(grid.cascade == c) & (grid.prep == "P0_none")]
+            v = f"\n{r.vls_of_plhiv.iloc[0]:.3f}" if len(r) else ""
+            labs.append(CASC_LAB[c].replace(" every", "\nevery") + v)
+        ax.set_xticks(range(len(cascs)))
+        ax.set_xticklabels(labs, fontsize=8)
+        ax.set_ylabel(ylab)
+        ax.set_ylim(bottom=0)
+        ax.grid(axis="y", alpha=0.28)
+        ax.margins(x=0.08)
+    axes[0].legend(fontsize=8.5, title="PrEP programme", title_fontsize=9,
+                   frameon=False)
+    fig.suptitle("What prevention adds under each treatment-cascade "
+                 "counterfactual", fontsize=13)
+    fig.text(0.5, -0.035,
+             "Each point is PrEP's increment over the SAME cascade with no "
+             "PrEP, paired by seed. x labels give the scenario and the viral "
+             "suppression among all PLHIV it reaches.\nThe shaded rung is a "
+             "BOUND, not a scenario: it requires every age-sex group to exceed "
+             "the best-performing group Eswatini has ever measured.",
+             ha="center", fontsize=8.2, color=MUTED)
+    fig.tight_layout(rect=[0, 0.01, 1, 0.94])
+    fig.savefig(FIG / "prep_by_counterfactual.png", dpi=140,
+                bbox_inches="tight")
+    plt.close(fig)
+
+
 def main():
     d = add_derived(load())
     pd.set_option("display.width", 220)
@@ -488,6 +562,7 @@ def main():
     print(x[["cascade", "vls_of_plhiv", "unaware", "aware_not_on_art",
              "on_art_not_suppr", "unsuppressed"]].round(4).to_string(index=False))
 
+    fig_prep_by_counterfactual(grid, per_seed)
     fig_surface(grid)
     fig_heatmap(grid)
     fig_xyz(grid)

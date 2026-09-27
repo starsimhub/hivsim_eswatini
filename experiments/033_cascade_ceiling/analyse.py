@@ -254,8 +254,14 @@ def fig_surface(grid):
 
 
 def fig_heatmap(grid):
-    """The same data as (x, y, z), matching the grid's own geometry."""
-    cascs, preps = list(CASC_LAB), list(PREP_LAB)
+    """The same data as (x, y, z), matching the grid's own geometry.
+
+    Reference row and column excluded -- see fig_xyz for why.
+    """
+    ref = grid
+    grid = grid[grid.cascade != "C0_baseline"]
+    cascs = [c for c in CASC_LAB if c != "C0_baseline"]
+    preps = list(PREP_LAB)          # no-PrEP row kept as the reference
     fig, axes = plt.subplots(1, 2, figsize=(14, 4.8))
     for ax, (zcol, title, fmt) in zip(axes, [
             ("averted", f"Infections averted, {WINDOW[0]}-{WINDOW[1]}", "{:,.0f}"),
@@ -274,9 +280,13 @@ def fig_heatmap(grid):
                             va="center", fontsize=7.5,
                             color="white" if M[i, j] > np.nanmax(M) * 0.6
                             else INK)
-        xt = [f"{CASC_LAB[c]}\n{grid[(grid.cascade==c)&(grid.prep=='P0_none')].vls_of_plhiv.iloc[0]:.3f}"
-              if len(grid[(grid.cascade==c)&(grid.prep=='P0_none')]) else CASC_LAB[c]
-              for c in cascs]
+        # Achieved suppression comes from the no-PrEP cell of each rung, which
+        # is in `ref` -- it was filtered out of the plotted data above.
+        xt = []
+        for c in cascs:
+            r = ref[(ref.cascade == c) & (ref.prep == "P0_none")]
+            xt.append(f"{CASC_LAB[c]}\n{r.vls_of_plhiv.iloc[0]:.3f}"
+                      if len(r) else CASC_LAB[c])
         ax.set_xticks(range(len(cascs))); ax.set_xticklabels(xt, fontsize=7.5)
         ax.set_yticks(range(len(preps)))
         ax.set_yticklabels([PREP_LAB[p] for p in preps], fontsize=8.5)
@@ -313,6 +323,14 @@ def fig_xyz(grid):
                "{:.0f}")]
     import matplotlib.patheffects as pe
 
+    # The no-PrEP row IS kept: it is the counterfactual each cascade rung is
+    # read against, and without it PrEP's contribution is the gap between a line
+    # and nothing. The baseline-cascade COLUMN is dropped, which also removes
+    # the degenerate C0/P0 cell whose "averted" is 0 by construction (each seed
+    # differenced against itself). Its values remain in grid.csv.
+    ref = grid                                   # keep for the x positions
+    grid = grid[grid.cascade != "C0_baseline"]
+
     preps = [p for p in PREP_LAB if (grid.prep == p).any()]
     ypos = {p: i for i, p in enumerate(preps)}
     pyk = grid.groupby("prep").py_prep.mean().to_dict()
@@ -341,13 +359,29 @@ def fig_xyz(grid):
         # Labels sit ABOVE each point with a white outline, not inside it --
         # inside-the-marker text collided wherever two rungs landed at a similar
         # suppression, which is exactly where the interesting cells are.
-        for _, r in g.iterrows():
-            ax.annotate(fmt.format(r[zcol]), (r.vls_of_plhiv, r.y),
-                        xytext=(0, 13), textcoords="offset points",
-                        fontsize=6.8, ha="center", va="bottom", color=INK,
-                        zorder=4,
-                        path_effects=[pe.withStroke(linewidth=2.4,
-                                                    foreground="white")])
+        # Several cascade rungs land at almost the same achieved suppression
+        # (the testing rungs differ by <0.002), so a fixed label offset makes
+        # their numbers overprint. Stagger the offset for any point that sits
+        # within xtol of the previous one in the same row.
+        xtol = 0.004
+        for p in preps:
+            s = g[g.prep == p].sort_values("vls_of_plhiv")
+            offsets, last_x, k = [], None, 0
+            for xv in s.vls_of_plhiv:
+                if last_x is not None and abs(xv - last_x) < xtol:
+                    k += 1
+                else:
+                    k = 0
+                offsets.append([(0, 13), (0, -19), (0, 25)][k % 3])
+                last_x = xv
+            for (_, r), off in zip(s.iterrows(), offsets):
+                ax.annotate(fmt.format(r[zcol]), (r.vls_of_plhiv, r.y),
+                            xytext=off, textcoords="offset points",
+                            fontsize=6.8, ha="center",
+                            va="bottom" if off[1] > 0 else "top", color=INK,
+                            zorder=4,
+                            path_effects=[pe.withStroke(linewidth=2.4,
+                                                        foreground="white")])
         ax.set_xlabel(f"viral suppression achieved among all PLHIV, 15+, "
                       f"{X_YEAR}  →  more complete cascade")
         ax.set_yticks(range(len(preps)))

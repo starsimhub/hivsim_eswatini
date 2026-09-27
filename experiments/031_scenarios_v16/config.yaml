@@ -1,0 +1,110 @@
+# Experiment 031 — Re-run 026's arms at the corrected testing rates, and measure
+# target vs achieved for the first time
+#
+# 026 reported the cascade arm as the largest single effect. 029 showed the arm
+# could not reach its target in three strata and that nobody had checked. 030
+# lowered the ceiling further. This closes the loop.
+
+experiment: 031_scenarios_v16
+follows: 030_testing_rate
+supersedes_numbers_in: 026_scenarios
+question: >
+  With awareness corrected to the observed level, how much ART coverage does the
+  art_95 arm actually deliver, and what does that do to 026's three headline
+  numbers -- 16,525 averted by the cascade, 8,771 by the largest PrEP arm, and
+  4,449 for PrEP added on top of the cascade?
+
+environment:
+  model_tag: model-v1.6
+  stisim: 1.5.11
+  starsim: 3.5.2
+  python: "3.14"
+  repo_branch: docs/pre-calibration-release
+
+model_change:
+  file: interventions.py, run_sims.py
+  what: >
+    TEST_RATE_M = 0.5 and TEST_RATE_F = 0.6 become the defaults, resolved in one
+    place (interventions.TEST_RATE_*) and threaded through make_interventions()
+    and make_sim() as None-defaults so an explicit override still works. Passing
+    1.0 / 1.0 reproduces experiments 001-029.
+  provenance: exp 030 -- fitted to the 8 SHIMS3 awareness strata, not assumed.
+  adopted_without: >
+    030's Acceptance withheld adoption pending a 2-D refinement around
+    (0.5, 0.6). Skipped deliberately for the abstract deadline. Cost accepted:
+    women 15-24 under-fills its baseline ART target by 1.3-2.0 pp from 2021 on,
+    in every arm including baseline, so it is common-mode rather than a contrast
+    error. Extending the check to 2040 tests whether that was the right call.
+
+design:
+  arms: 8            # 026's, unchanged -- see run.py ARMS
+  contrasts: 7       # 026's named contrasts, unchanged
+  seeds: 10
+  start: 1985
+  stop: 2041         # tables run to 2040; +1 so 2040 is complete
+  scenario_window: 2026-2030
+  early_cascade_window: 2020-2025   # art_95_early and prep_at_high_art
+  parameters: 024 design row 868 -- as 026 and 029, unchanged
+  parameter_uncertainty: >
+    NONE. One point, so arm differences carry seed noise only. The abstract must
+    say so and must NOT report a credible interval. This is 026's constraint,
+    carried forward unchanged.
+
+run_script_changes_vs_026:
+  - CascadeByAge() added to the analyzer list; "cascadeage." added to
+    KEEP_PREFIX so the per-band counts survive the column filter.
+  - test_rate_m / test_rate_f added to arm_fingerprint. The fingerprint is the
+    cache key; 026's docstring records that omitting a spec from it let a
+    changed ramp silently reuse a stale parquet.
+  - Everything else copied verbatim, including build_pars, so the arms stay
+    comparable to 026 and to the calibration that justified their parameters.
+
+diagnostics:
+  primary: >
+    outputs/art_reachability.csv -- per arm, stratum and year 1985-2040: the
+    interpolated ART target, the awareness ceiling, the coverage achieved, and
+    the signed shortfall. 030 established the format; this extends it across
+    arms and out to 2040, where 030 stopped at 2031 with the shortfall still
+    widening (-1.56 pp in 2021 to -2.00 pp in 2031).
+  secondary: >
+    outputs/contrasts.csv -- 026's seven named contrasts, re-measured, with
+    per-seed spread and sign consistency.
+
+known_ceilings_at_029:      # awareness = max reachable ART coverage, 2030
+  women_15_24: 0.832        # short of 0.95 by 11.8 pp
+  men_25_34:   0.897        # short by 5.3 pp -- the stratum 026's headroom came from
+  men_15_24:   0.900        # short by 5.0 pp
+  note: >
+    Those were measured at 029's INFLATED awareness. At 030's corrected rates
+    they are lower still, so the art_95 arm has less room than this table shows.
+
+success_criteria:
+  gate: >
+    Baseline cumulative infections 2026-2040 must reproduce 026's 63,162 within
+    seed spread. v1.4 and v1.5 are recorded in their tags as near-inert (v1.4:
+    identical seeded run gives cum_infections 82943 either way), so the only
+    expected difference is the testing split. If the gate fails, something else
+    moved between v1.3 and v1.6 and NO contrast is reported until it is found.
+  good: >
+    art_95's realised per-stratum coverage recorded, the gap to 0.95 quantified,
+    and the three headline numbers restated as what the model delivered rather
+    than what it was asked for.
+  interesting_failure: >
+    art_95 delivers materially less than 026 credited it with and the cascade's
+    margin over prep_fsw narrows or reverses. That confirms 029's reasoning
+    rather than contradicting it, and the abstract reports it -- the alternative
+    is reporting an intervention the model could not deliver.
+
+figures:
+  - scenarios.png                # 026's headline, regenerated
+  - art_target_vs_achieved.png   # the figure that answers the question
+  - prevalence_fit_vs_phia.png   # the standard figure, from the baseline arm
+
+out_of_scope:
+  testing_scale_up_arm: >
+    029 obs 5: two thirds of the men 25-34 coverage gap is people who do not know
+    their status, and no arm here moves awareness. Now expressible for the first
+    time, but a different question -- its own folder.
+  hard_to_reach_floor: >
+    030 obs 8's ~3 pp irreducible unaware fraction in the 50+ bands. Will not
+    move a PrEP-versus-cascade contrast. Matters to a testing scale-up arm.

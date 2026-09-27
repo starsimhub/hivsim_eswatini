@@ -436,10 +436,30 @@ def main():
     print(e.round({"prep_increment": 0, "py_prep": 0,
                    "py_per_prep_averted": 1}).to_string(index=False))
 
+    # Where does the cascade actually stop, and who is left? 032 stopped at an
+    # ART target of 0.95, called the resulting 0.948 a ceiling, and was wrong:
+    # 78% of that residual was people DIAGNOSED BUT NOT ON ART, i.e. the target
+    # itself. This table is what caught that, so it is a standing output now.
+    x = grid[grid.prep == "P0_none"].copy()
+    x["unaware"] = 1 - x.aware
+    x["aware_not_on_art"] = x.aware * (1 - x.on_art_given_aware)
+    x["on_art_not_suppr"] = (x.aware * x.on_art_given_aware
+                             * (1 - x.vls_given_art))
+    x["unsuppressed"] = 1 - x.vls_of_plhiv
+    x = x.sort_values("vls_of_plhiv")
+    x[["cascade", "aware", "on_art_given_aware", "vls_given_art",
+       "vls_of_plhiv", "unaware", "aware_not_on_art", "on_art_not_suppr",
+       "unsuppressed"]].to_csv(OUT / "residual_decomposition.csv", index=False)
+    print("\n=== Who is NOT virally suppressed, by rung (share of all PLHIV) ===")
+    print(x[["cascade", "vls_of_plhiv", "unaware", "aware_not_on_art",
+             "on_art_not_suppr", "unsuppressed"]].round(4).to_string(index=False))
+
     fig_surface(grid)
     fig_heatmap(grid)
-    print("\nwrote outputs/{grid,per_seed,substitution}.csv")
-    print("      figures/{surface,surface_heatmap}.png")
+    fig_xyz(grid)
+    print("\nwrote outputs/{grid,per_seed,substitution,"
+          "residual_decomposition}.csv")
+    print("      figures/{surface,surface_heatmap,xyz_scatter}.png")
 
 
 if __name__ == "__main__":

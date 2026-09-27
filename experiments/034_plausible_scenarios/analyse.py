@@ -578,9 +578,12 @@ def fig_attribution(attr, baseline_total):
     ax.set_ylabel(f"cumulative HIV infections, {WINDOW[0]}-{WINDOW[1]}")
     ax.set_ylim(0, baseline_total * 1.08)
     ax.grid(axis="y", alpha=0.28, zorder=0)
-    ax.legend(fontsize=9, frameon=False, loc="lower left")
+    # Legend above the axes: inside the plot it sat on top of the segment
+    # labels in the leftmost group, where the bars are shortest.
+    ax.legend(fontsize=9, frameon=False, ncol=3, loc="lower center",
+              bbox_to_anchor=(0.5, 1.02))
     ax.set_title("Of every infection Eswatini would otherwise see, how many "
-                 "does each lever prevent?", fontsize=12.5)
+                 "does each lever prevent?", fontsize=12.5, pad=34)
     fig.text(0.5, -0.06,
              "Each bar is the full status-quo burden. Percentages are shares of "
              "ALL baseline infections, not of those averted, so the grey block "

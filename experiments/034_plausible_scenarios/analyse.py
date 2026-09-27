@@ -480,6 +480,113 @@ def fig_prep_by_counterfactual(grid, per_seed):
     plt.close(fig)
 
 
+def attribution(per_seed, out=True):
+    """Split each scenario's infections averted into cascade- and PrEP-attributable.
+
+    The two levers are partially substitutable, so their joint effect is
+    SUB-ADDITIVE: cascade-alone plus PrEP-alone exceeds the two together, by an
+    overlap of up to 10,183 infections here. That overlap has to be allocated,
+    and the choice is not innocent.
+
+    `sequential` gives the whole overlap to the cascade, purely because it is
+    named first -- at the bound that reads 88/12 rather than 75/25.
+
+    `shapley` averages over both orderings, which for two players is
+    cascade = A + I/2, prep = B + I/2. It is symmetric, sums exactly to the
+    joint effect, and does not depend on an arbitrary ordering. Preferred;
+    sequential is kept as a sensitivity.
+    """
+    def cell(c, p):
+        return per_seed[(per_seed.cascade == c)
+                        & (per_seed.prep == p)].set_index("seed").cum_inf
+    bc, bp = BASE_CELL
+    base = cell(bc, bp)
+    rows = []
+    for c in CASC_LAB:
+        for p in PREP_LAB:
+            if not len(cell(c, p)):
+                continue
+            A = (base - cell(c, bp)).mean()      # cascade alone
+            B = (base - cell(bc, p)).mean()      # PrEP alone
+            J = (base - cell(c, p)).mean()       # both
+            I = J - A - B
+            rows.append(dict(
+                cascade=c, prep=p, joint_averted=J, cascade_solo=A,
+                prep_solo=B, interaction=I,
+                seq_cascade=A, seq_prep=J - A,
+                shap_cascade=A + I / 2, shap_prep=B + I / 2,
+                shap_cascade_pct=100 * (A + I / 2) / J if J else np.nan,
+                shap_prep_pct=100 * (B + I / 2) / J if J else np.nan,
+                seq_cascade_pct=100 * A / J if J else np.nan,
+                seq_prep_pct=100 * (J - A) / J if J else np.nan))
+    t = pd.DataFrame(rows)
+    if out:
+        t.to_csv(OUT / "attribution.csv", index=False)
+    return t
+
+
+def fig_attribution(attr):
+    """Infections averted vs baseline, split into what each lever contributed.
+
+    Adam's ask: show the cascade-only scenario alongside the combinations, on
+    an averted-versus-baseline scale, with the share from each lever visible.
+    Bars are stacked by Shapley attribution, so each bar's height is the real
+    joint effect and the split is not an artefact of ordering.
+    """
+    show_prep = ["P0_none", "P1_fsw", "P4_women_25_34"]
+    cascs = [c for c in CASC_LAB if c != "S0_status_quo"]
+    width, gap = 0.26, 0.02
+    fig, ax = plt.subplots(figsize=(13.5, 6.4))
+    if "S4_bound" in cascs:
+        i = cascs.index("S4_bound")
+        ax.axvspan(i - 0.5, i + 0.5, color="#eceff1", zorder=0)
+    for j, p in enumerate(show_prep):
+        xs = [i + (j - 1) * (width + gap) for i in range(len(cascs))]
+        casc_v, prep_v = [], []
+        for c in cascs:
+            r = attr[(attr.cascade == c) & (attr.prep == p)]
+            casc_v.append(r.shap_cascade.iloc[0] if len(r) else 0)
+            prep_v.append(r.shap_prep.iloc[0] if len(r) else 0)
+        ax.bar(xs, casc_v, width, color="#2c6fbb", zorder=2,
+               label="from the cascade" if j == 0 else None)
+        ax.bar(xs, prep_v, width, bottom=casc_v, color="#e8a33d", zorder=2,
+               label="from PrEP" if j == 0 else None)
+        for x, cv, pv in zip(xs, casc_v, prep_v):
+            tot = cv + pv
+            ax.text(x, tot + 450, f"{tot:,.0f}", ha="center", fontsize=7.4,
+                    color=INK, zorder=3)
+            if pv > 1200:
+                ax.text(x, cv + pv / 2, f"{100*pv/tot:.0f}%", ha="center",
+                        va="center", fontsize=7.2, color="white", zorder=3)
+            if cv > 1200:
+                ax.text(x, cv / 2, f"{100*cv/tot:.0f}%", ha="center",
+                        va="center", fontsize=7.2, color="white", zorder=3)
+        for i, x in enumerate(xs):
+            ax.text(x, -1700, PREP_LAB[p].replace("+ ", "+\n"), ha="center",
+                    va="top", fontsize=6.6, color=MUTED, rotation=0)
+    labs = [CASC_LAB[c].replace(" every", "\nevery") for c in cascs]
+    ax.set_xticks(range(len(cascs)))
+    ax.set_xticklabels(labs, fontsize=9)
+    ax.tick_params(axis="x", pad=34)
+    ax.set_ylabel(f"cumulative infections averted vs baseline, "
+                  f"{WINDOW[0]}-{WINDOW[1]}")
+    ax.set_ylim(bottom=0)
+    ax.grid(axis="y", alpha=0.28, zorder=0)
+    ax.legend(fontsize=9, frameon=False, loc="upper left")
+    ax.set_title("How much of each scenario's impact comes from treatment, and "
+                 "how much from prevention", fontsize=12.5)
+    fig.text(0.5, -0.06,
+             "Bars are infections averted against the status-quo baseline. The "
+             "two levers overlap -- together they avert less than the sum of "
+             "their separate effects -- so the split uses\nShapley attribution, "
+             "which shares the overlap evenly and is independent of which lever "
+             "is counted first. The shaded rung is a BOUND, not a scenario.",
+             ha="center", fontsize=8.2, color=MUTED)
+    fig.tight_layout(rect=[0, 0.02, 1, 1])
+    fig.savefig(FIG / "attribution.png", dpi=140, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main():
     d = add_derived(load())
     pd.set_option("display.width", 220)
@@ -561,6 +668,20 @@ def main():
     print("\n=== Who is NOT virally suppressed, by rung (share of all PLHIV) ===")
     print(x[["cascade", "vls_of_plhiv", "unaware", "aware_not_on_art",
              "on_art_not_suppr", "unsuppressed"]].round(4).to_string(index=False))
+
+    attr = attribution(per_seed)
+    print("\n=== Infections averted vs baseline, split by lever (Shapley) ===")
+    print("    The levers overlap, so cascade-alone + PrEP-alone EXCEEDS the")
+    print("    two together. Shapley shares that overlap evenly; 'seq' gives it")
+    print("    all to the cascade purely because it is named first.")
+    show = attr[attr.prep != "P0_none"].copy()
+    print(show[["cascade", "prep", "joint_averted", "cascade_solo", "prep_solo",
+                "interaction", "shap_cascade_pct", "shap_prep_pct",
+                "seq_prep_pct"]]
+          .round({"joint_averted": 0, "cascade_solo": 0, "prep_solo": 0,
+                  "interaction": 0, "shap_cascade_pct": 0, "shap_prep_pct": 0,
+                  "seq_prep_pct": 0}).to_string(index=False))
+    fig_attribution(attr)
 
     fig_prep_by_counterfactual(grid, per_seed)
     fig_surface(grid)

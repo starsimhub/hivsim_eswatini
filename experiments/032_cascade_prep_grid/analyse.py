@@ -137,8 +137,30 @@ def build_grid(d):
             inc_drop_pct=dinc.mean(), inc_drop_sd=dinc.std(ddof=1),
             py_prep=g.py_prep.mean()))
     grid = pd.DataFrame(rows).merge(achieved_x(d), on=["cascade", "prep"])
-    grid["py_per_averted"] = np.where(grid.averted > 0,
-                                      grid.py_prep / grid.averted, np.nan)
+
+    # The PrEP INCREMENT at each cascade rung, paired by seed against the
+    # no-PrEP cell on the SAME rung.
+    #
+    # Dividing PrEP person-years by `averted` (which is measured against the
+    # global baseline) would credit PrEP with the cascade's infections too, and
+    # reads backwards: it makes FSW PrEP look MORE efficient at high suppression
+    # (1.4 py/infection) than at baseline (3.1), when the truth is the reverse.
+    # Efficiency must use the increment the PrEP arm itself is responsible for.
+    inc, frac = [], []
+    for _, r in grid.iterrows():
+        cell = per_seed[(per_seed.cascade == r.cascade)
+                        & (per_seed.prep == r.prep)].set_index("seed")
+        ref = per_seed[(per_seed.cascade == r.cascade)
+                       & (per_seed.prep == "P0_none")].set_index("seed")
+        dd = (ref.cum_inf - cell.cum_inf).dropna()
+        inc.append(dd.mean())
+        # Share of the burden REMAINING at that cascade rung that PrEP removes
+        # -- the quantity the abstract reports.
+        frac.append(100 * dd.mean() / ref.cum_inf.mean())
+    grid["prep_increment"] = inc
+    grid["prep_pct_of_residual"] = frac
+    grid["py_per_prep_averted"] = np.where(
+        grid.prep_increment > 0, grid.py_prep / grid.prep_increment, np.nan)
     grid = grid.sort_values(["prep", "cascade"])
     grid.to_csv(OUT / "grid.csv", index=False)
     return grid, per_seed
@@ -287,18 +309,36 @@ def main():
     print(piv2.reindex(index=list(PREP_LAB), columns=list(CASC_LAB))
               .round(1).to_string())
 
+    print("\n=== What PrEP adds AT each cascade rung (increment over no-PrEP "
+          "on the same rung) ===")
+    p1 = grid.pivot_table(index="prep", columns="cascade",
+                          values="prep_increment")
+    print(p1.reindex(index=list(PREP_LAB), columns=list(CASC_LAB))
+            .round(0).to_string())
+    print("\n    as % of the burden REMAINING at that rung:")
+    p2 = grid.pivot_table(index="prep", columns="cascade",
+                          values="prep_pct_of_residual")
+    print(p2.reindex(index=list(PREP_LAB), columns=list(CASC_LAB))
+            .round(1).to_string())
+
     sub = substitution(grid)
     print("\n=== Substitution: what one more PrEP rung buys vs one more "
           "cascade rung ===")
-    print(sub[["cascade", "prep", "vls_of_plhiv", "averted",
-               "gain_from_more_prep", "gain_from_more_cascade"]]
-          .round(0).to_string(index=False))
+    s = sub[["cascade", "prep", "vls_of_plhiv", "averted",
+             "gain_from_more_prep", "gain_from_more_cascade"]].copy()
+    s["vls_of_plhiv"] = s.vls_of_plhiv.round(3)
+    print(s.round({"averted": 0, "gain_from_more_prep": 0,
+                   "gain_from_more_cascade": 0}).to_string(index=False))
 
-    eff = grid[grid.py_prep > 0].nsmallest(6, "py_per_averted")
-    print("\n=== Most efficient cells (person-years of PrEP per infection "
-          "averted) ===")
-    print(eff[["cascade", "prep", "vls_of_plhiv", "averted", "py_prep",
-               "py_per_averted"]].round(1).to_string(index=False))
+    print("\n=== PrEP efficiency, using the increment PrEP is responsible for "
+          "(lower is better) ===")
+    eff = (grid[grid.py_prep > 0]
+           .sort_values(["prep", "vls_of_plhiv"]))
+    e = eff[["cascade", "prep", "vls_of_plhiv", "prep_increment", "py_prep",
+             "py_per_prep_averted"]].copy()
+    e["vls_of_plhiv"] = e.vls_of_plhiv.round(3)
+    print(e.round({"prep_increment": 0, "py_prep": 0,
+                   "py_per_prep_averted": 1}).to_string(index=False))
 
     fig_surface(grid)
     fig_heatmap(grid)

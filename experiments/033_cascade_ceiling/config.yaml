@@ -1,0 +1,89 @@
+# Experiment 033 — where does the cascade actually stop?
+#
+# 032 raised the ART target to 0.95, watched suppression stall at 0.948, and
+# called it saturation. It was not: 78% of that residual was people diagnosed
+# but not on ART, and delivered coverage was 0.958 against a 0.950 target.
+# The target was binding. This extends the ladder past it.
+
+experiment: 033_cascade_ceiling
+follows: 032_cascade_prep_grid
+supersedes: >
+  032's ceiling, saturation and flat-PrEP claims. 032's SUMMARY stands as
+  written; 033's is the correction.
+
+environment:
+  model_tag: model-v1.6
+  stisim: 1.5.11
+  starsim: 3.5.2
+  python: "3.12 (raccoon venv)"
+  repo_branch: docs/pre-calibration-release
+  compute: raccoon, 110 of 120 cores, 450 sims
+
+model_change: none
+
+design:
+  cells: 45          # 9 cascade rungs x 5 PrEP rungs
+  seeds: 10
+  common_random_numbers: true
+  start: 1985
+  stop: 2041
+  outcome_window: 2026-2040
+  parameters: 024 design row 868 — one point, intervals are seed noise only
+
+cascade_ladder:          # (art_target, vls_target, testing multiplier)
+  C0_baseline:    [null,  null,  1.0]
+  C1_linkage:     [0.95,  null,  1.0]
+  C2_suppression: [0.95,  0.99,  1.0]
+  C3_testing_x2:  [0.95,  0.99,  2.0]
+  C4_testing_x3:  [0.95,  0.99,  3.0]
+  C5_testing_x4:  [0.95,  0.99,  4.0]
+  C6_art_99:      [0.99,  0.99,  4.0]     # new in 033
+  C7_art_999:     [0.999, 0.99,  4.0]     # new in 033
+  C8_all_max:     [0.999, 0.999, 4.0]     # new in 033
+
+stop_condition:
+  what: C0/P0 must reproduce 031/032's baseline of 66,178
+  result: PASSED EXACTLY
+
+headline_results:
+  suppression_achieved: {C5: 0.948, C6: 0.978, C7: 0.986, C8: 0.996}
+  residual_at_top_pct_of_plhiv: 0.43
+  infections_remaining_at_0996: 32662     # of 66,178 — 49%
+  max_cascade_averts: 33516               # 50.6%
+  prep_pct_of_residual_fsw:   [14.8, 14.9, 9.4, 9.0, 6.6]
+  prep_pct_of_residual_broad: [22.1, 23.7, 17.4, 13.9, 13.6]
+  broad_prep_at_0978_vs_max_cascade_no_prep: [1977, "SD 1618", "10/10 seeds"]
+
+the_testing_bottleneck:      # obs 3
+  across_testing_x2_to_x4_with_art_target_fixed:
+    undiagnosed_falls_pp: 1.18
+    diagnosed_untreated_rises_pp: 0.94
+    art_coverage_of_plhiv: [0.9555, 0.9579]   # pinned at the 0.95 target
+    net_suppression_gain_pp: 0.2
+  lesson: >
+    Diagnosis converts into suppression only if treatment expands to absorb it.
+    Otherwise testing relocates people within the cascade rather than moving
+    them through it.
+
+plausibility:                # obs 9 — the reason exp 034 exists
+  shims3_2021_measured_15plus: {aware: 0.937, on_art_given_aware: 0.973, vls_given_art: 0.962}
+  best_single_stratum_observed: {aware: 0.983, on_art_given_aware: 0.998, vls_given_art: 0.992}
+  top_rungs_require: {aware: 0.999, on_art_given_aware: 0.998, vls_given_art: 0.999}
+  verdict: >
+    C6-C8 demand that EVERY age-sex group exceed the best-performing group
+    Eswatini has ever measured. They are a BOUND, not a scenario.
+  why_the_model_can_reach_them:
+    awareness: no never-testing subgroup (030 obs 8 — survey says ~3% of
+      over-50s never know, model says ~1% and cannot say more)
+    linkage: stisim's stratified ART path ignores the linkage delay and the
+      initiation probability (029 upstream note)
+    suppression: vls_coverage has no age gradient (029 obs 6)
+  realistic_frontier: 0.91-0.95      # C1-C4; 032's range, as it happens
+
+known_limitations:
+  no_age_targeted_testing: >
+    The testing lever is a sex-specific multiplier. "Raise awareness in men
+    25-34" is not expressible — only "raise it everywhere and see who responds".
+  testing_x3_is_the_95_percent_rung: >
+    Tripling the routine testing rate brings 7 of 8 strata to >=0.95 awareness
+    (women 15-24 reach 0.933). That is the honest cost of the first 95.

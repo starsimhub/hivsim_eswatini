@@ -205,35 +205,46 @@ def fig_surface(grid):
     Two cells at the same x can differ in z because WHO is suppressed matters
     (031 obs 10), and smoothing would hide exactly that.
     """
-    fig, axes = plt.subplots(1, 2, figsize=(13.5, 5.4))
+    fig, axes = plt.subplots(1, 3, figsize=(18.5, 5.4))
     panels = [("averted", "averted_sd",
                f"Cumulative infections averted, {WINDOW[0]}-{WINDOW[1]}"),
               ("inc_drop_pct", "inc_drop_sd",
-               f"Reduction in HIV incidence at {WINDOW[1]} (%)")]
+               f"Reduction in HIV incidence at {WINDOW[1]} (%)"),
+              # The panel that answers "does prevention still matter when
+              # suppression is high": PrEP's share of the burden REMAINING at
+              # each rung, so the denominator shrinks as the cascade improves.
+              ("prep_pct_of_residual", None,
+               "PrEP's share of the burden REMAINING (%)")]
     for ax, (zcol, zsd, ylab) in zip(axes, panels):
         for p in PREP_LAB:
             g = grid[grid.prep == p].sort_values("vls_of_plhiv")
-            if not len(g):
+            if not len(g) or (zcol == "prep_pct_of_residual" and p == "P0_none"):
                 continue
             ax.plot(g.vls_of_plhiv, g[zcol], "-o", ms=6, lw=1.8,
                     color=PREP_COL[p], label=PREP_LAB[p], zorder=3)
-            ax.fill_between(g.vls_of_plhiv, g[zcol] - g[zsd], g[zcol] + g[zsd],
-                            color=PREP_COL[p], alpha=0.13, lw=0, zorder=2)
+            if zsd is not None:
+                ax.fill_between(g.vls_of_plhiv, g[zcol] - g[zsd],
+                                g[zcol] + g[zsd], color=PREP_COL[p],
+                                alpha=0.13, lw=0, zorder=2)
         ax.axhline(0, color=INK, lw=0.9)
         ax.set_xlabel(f"viral suppression achieved among all PLHIV, 15+, "
                       f"{X_YEAR}")
         ax.set_ylabel(ylab)
         ax.grid(alpha=0.28)
+    axes[2].set_ylim(bottom=0)
     axes[0].legend(fontsize=8.5, title="PrEP coverage", title_fontsize=9,
                    frameon=False, loc="upper left")
     fig.suptitle("What prevention adds at every level of treatment scale-up "
                  "Eswatini can actually reach", fontsize=13)
-    fig.text(0.5, -0.03,
+    fig.text(0.5, -0.045,
              "Each point is one scenario, placed at the suppression it ACHIEVED "
              "rather than the one it was asked for. Moving RIGHT is a more "
-             "complete cascade\n(link everyone diagnosed, then raise suppression "
-             "to 0.99, then scale testing); moving UP a line is wider PrEP. "
-             "Bands are +/-1 SD over 10 seeds.",
+             "complete cascade (link everyone diagnosed,\nthen raise suppression "
+             "to 0.99, then scale testing); moving UP a line is wider PrEP. The "
+             "cascade axis SATURATES near 0.95 -- about 5% of people with HIV "
+             "stay unsuppressed whatever is done.\nBands are +/-1 SD across 10 "
+             "seeds on each line's own level; comparisons BETWEEN lines share "
+             "seeds and are far tighter than the bands suggest.",
              ha="center", fontsize=8.2, color=MUTED)
     fig.tight_layout(rect=[0, 0.02, 1, 0.94])
     fig.savefig(FIG / "surface.png", dpi=140, bbox_inches="tight")

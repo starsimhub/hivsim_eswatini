@@ -525,62 +525,69 @@ def attribution(per_seed, out=True):
     return t
 
 
-def fig_attribution(attr):
-    """Infections averted vs baseline, split into what each lever contributed.
+def fig_attribution(attr, baseline_total):
+    """Every bar is the WHOLE epidemic, split by what did and did not prevent it.
 
-    Adam's ask: show the cascade-only scenario alongside the combinations, on
-    an averted-versus-baseline scale, with the share from each lever visible.
-    Bars are stacked by Shapley attribution, so each bar's height is the real
-    joint effect and the split is not an artefact of ordering.
+    Adam's design. Expressing the split as a share of infections AVERTED makes
+    every scenario look complete -- the segments always sum to 100% however
+    small the effect. Against the full baseline burden instead, the grey block
+    is the fraction neither lever prevents, which is the quantity the paper is
+    actually about.
+
+    Segments use Shapley attribution, so the split does not depend on which
+    lever is counted first.
     """
     show_prep = ["P0_none", "P1_fsw", "P4_women_25_34"]
     cascs = [c for c in CASC_LAB if c != "S0_status_quo"]
     width, gap = 0.26, 0.02
-    fig, ax = plt.subplots(figsize=(13.5, 6.4))
+    fig, ax = plt.subplots(figsize=(14, 6.8))
     if "S4_bound" in cascs:
         i = cascs.index("S4_bound")
         ax.axvspan(i - 0.5, i + 0.5, color="#eceff1", zorder=0)
     for j, p in enumerate(show_prep):
         xs = [i + (j - 1) * (width + gap) for i in range(len(cascs))]
-        casc_v, prep_v = [], []
-        for c in cascs:
+        for x, c in zip(xs, cascs):
             r = attr[(attr.cascade == c) & (attr.prep == p)]
-            casc_v.append(r.shap_cascade.iloc[0] if len(r) else 0)
-            prep_v.append(r.shap_prep.iloc[0] if len(r) else 0)
-        ax.bar(xs, casc_v, width, color="#2c6fbb", zorder=2,
-               label="from the cascade" if j == 0 else None)
-        ax.bar(xs, prep_v, width, bottom=casc_v, color="#e8a33d", zorder=2,
-               label="from PrEP" if j == 0 else None)
-        for x, cv, pv in zip(xs, casc_v, prep_v):
-            tot = cv + pv
-            ax.text(x, tot + 450, f"{tot:,.0f}", ha="center", fontsize=7.4,
-                    color=INK, zorder=3)
-            if pv > 1200:
-                ax.text(x, cv + pv / 2, f"{100*pv/tot:.0f}%", ha="center",
-                        va="center", fontsize=7.2, color="white", zorder=3)
-            if cv > 1200:
-                ax.text(x, cv / 2, f"{100*cv/tot:.0f}%", ha="center",
-                        va="center", fontsize=7.2, color="white", zorder=3)
-        for i, x in enumerate(xs):
-            ax.text(x, -1700, PREP_LAB[p].replace("+ ", "+\n"), ha="center",
-                    va="top", fontsize=6.6, color=MUTED, rotation=0)
+            cv = r.shap_cascade.iloc[0] if len(r) else 0.0
+            pv = r.shap_prep.iloc[0] if len(r) else 0.0
+            rem = baseline_total - cv - pv
+            first = (j == 0 and x == xs[0])
+            ax.bar(x, cv, width, color="#2c6fbb", zorder=2,
+                   label="averted by the cascade" if first else None)
+            ax.bar(x, pv, width, bottom=cv, color="#e8a33d", zorder=2,
+                   label="averted by PrEP" if first else None)
+            ax.bar(x, rem, width, bottom=cv + pv, color="#d5dade", zorder=2,
+                   label="not averted" if first else None)
+            for val, bot in ((cv, 0), (pv, cv), (rem, cv + pv)):
+                if val > baseline_total * 0.035:
+                    ax.text(x, bot + val / 2, f"{100*val/baseline_total:.0f}%",
+                            ha="center", va="center", fontsize=7.4, zorder=3,
+                            color="white" if val is not rem else INK)
+        for x in xs:
+            ax.text(x, -baseline_total * 0.035,
+                    PREP_LAB[p].replace("+ ", "+\n"), ha="center", va="top",
+                    fontsize=6.6, color=MUTED)
+    ax.axhline(baseline_total, color=INK, lw=1.4, ls="--", zorder=4)
+    ax.text(len(cascs) - 0.42, baseline_total * 1.012,
+            f"baseline: {baseline_total:,.0f} infections with no cascade "
+            f"improvement and no PrEP", ha="right", fontsize=8, color=INK)
     labs = [CASC_LAB[c].replace(" every", "\nevery") for c in cascs]
     ax.set_xticks(range(len(cascs)))
     ax.set_xticklabels(labs, fontsize=9)
     ax.tick_params(axis="x", pad=34)
-    ax.set_ylabel(f"cumulative infections averted vs baseline, "
-                  f"{WINDOW[0]}-{WINDOW[1]}")
-    ax.set_ylim(bottom=0)
+    ax.set_ylabel(f"cumulative HIV infections, {WINDOW[0]}-{WINDOW[1]}")
+    ax.set_ylim(0, baseline_total * 1.08)
     ax.grid(axis="y", alpha=0.28, zorder=0)
-    ax.legend(fontsize=9, frameon=False, loc="upper left")
-    ax.set_title("How much of each scenario's impact comes from treatment, and "
-                 "how much from prevention", fontsize=12.5)
+    ax.legend(fontsize=9, frameon=False, loc="lower left")
+    ax.set_title("Of every infection Eswatini would otherwise see, how many "
+                 "does each lever prevent?", fontsize=12.5)
     fig.text(0.5, -0.06,
-             "Bars are infections averted against the status-quo baseline. The "
-             "two levers overlap -- together they avert less than the sum of "
-             "their separate effects -- so the split uses\nShapley attribution, "
-             "which shares the overlap evenly and is independent of which lever "
-             "is counted first. The shaded rung is a BOUND, not a scenario.",
+             "Each bar is the full status-quo burden. Percentages are shares of "
+             "ALL baseline infections, not of those averted, so the grey block "
+             "is what neither lever prevents.\nThe two levers overlap, so the "
+             "split uses Shapley attribution, which shares that overlap evenly "
+             "and does not depend on which is counted first. The shaded rung is "
+             "a BOUND, not a scenario.",
              ha="center", fontsize=8.2, color=MUTED)
     fig.tight_layout(rect=[0, 0.02, 1, 1])
     fig.savefig(FIG / "attribution.png", dpi=140, bbox_inches="tight")
@@ -681,7 +688,19 @@ def main():
           .round({"joint_averted": 0, "cascade_solo": 0, "prep_solo": 0,
                   "interaction": 0, "shap_cascade_pct": 0, "shap_prep_pct": 0,
                   "seq_prep_pct": 0}).to_string(index=False))
-    fig_attribution(attr)
+    bc, bp = BASE_CELL
+    baseline_total = per_seed[(per_seed.cascade == bc)
+                              & (per_seed.prep == bp)].cum_inf.mean()
+    attr["cascade_pct_of_all"] = 100 * attr.shap_cascade / baseline_total
+    attr["prep_pct_of_all"] = 100 * attr.shap_prep / baseline_total
+    attr["not_averted_pct"] = 100 * (baseline_total - attr.shap_cascade
+                                     - attr.shap_prep) / baseline_total
+    attr.to_csv(OUT / "attribution.csv", index=False)
+    print(f"\n=== Share of ALL {baseline_total:,.0f} baseline infections ===")
+    print(attr[attr.cascade != "S0_status_quo"]
+          [["cascade", "prep", "cascade_pct_of_all", "prep_pct_of_all",
+            "not_averted_pct"]].round(1).to_string(index=False))
+    fig_attribution(attr, baseline_total)
 
     fig_prep_by_counterfactual(grid, per_seed)
     fig_surface(grid)

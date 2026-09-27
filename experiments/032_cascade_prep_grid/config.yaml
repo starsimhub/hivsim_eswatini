@@ -1,0 +1,109 @@
+# Experiment 032 — A cascade x PrEP surface, with the cascade axis measured
+#
+# Replaces discrete arms named for what they ASK with a surface on which every
+# cell sits at the suppression it ACHIEVED. 031's art_95 asked for 0.95 and
+# delivered 0.818 in men 25-34; relabelling does not fix that, redesigning does.
+
+experiment: 032_cascade_prep_grid
+follows: 031_scenarios_v16
+question: >
+  Across the full range of viral suppression Eswatini can actually reach, what
+  does adding PrEP buy — and at what point does a further step up the cascade
+  stop being worth more than a wider PrEP programme?
+
+environment:
+  model_tag: model-v1.6
+  stisim: 1.5.11
+  starsim: 3.5.2
+  python: "3.12 (raccoon venv)"
+  repo_branch: docs/pre-calibration-release
+  compute: raccoon, 110 of 120 cores, 300 sims in 218 s
+
+model_change: none
+  # Deliberately. Suppression is raised BY SEX only, using the existing
+  # sex-keyed VLSStockTarget. Age-stratifying it is a code change to the class
+  # model-v1.3 depends on and perturbs a calibrated model — deferred.
+
+axes:
+  x:
+    what: viral suppression among all PLHIV, 15+, at 2030 — an ACHIEVED outcome
+    why: >
+      The cascade is not a control variable. Asking for 0.95 coverage does not
+      deliver it, because stisim fills a stratified ART target only from the
+      already-diagnosed. Plotting achieved suppression makes a scenario that
+      falls short land further left instead of carrying a false label.
+    caveat: >
+      It is an outcome, so two cells at equal x can differ in z — WHO is
+      suppressed matters, not just how many. Plot the cells, never a fitted
+      surface alone.
+  y:
+    what: PrEP coverage, nested outward from the highest-risk group
+    rungs: [none, FSW 60%, +higher-risk AGYW 30%, +all AGYW 30%, +women 25-34 30%]
+    disjointness: >
+      scenarios.agyw() is `female & 15-24` and does NOT exclude FSW. Each rung
+      subtracts the groups already covered and each Prep instance is separately
+      named, or an agent enrolled twice would corrupt the person-year
+      denominator behind the efficiency metric.
+  z:
+    - cumulative infections averted 2026-2040
+    - reduction in HIV incidence at 2040 (%)
+    - PrEP's share of the burden REMAINING at that cascade rung (%)
+
+cascade_ladder:      # (art_target, vls_target, testing multiplier), cumulative
+  C0_baseline:    [null, null, 1.0]
+  C1_linkage:     [0.95, null, 1.0]
+  C2_suppression: [0.95, 0.99, 1.0]
+  C3_testing_x2:  [0.95, 0.99, 2.0]
+  C4_testing_x3:  [0.95, 0.99, 3.0]
+  C5_testing_x4:  [0.95, 0.99, 4.0]
+notes_on_the_ladder:
+  art_target_is_not_coverage: >
+    0.95 is a way of saying "link everyone you have found" — stisim fills it
+    only from `diagnosed & ~on_art`, and 031 obs 4 measured on-ART-given-aware
+    hitting 1.000 in the bound strata.
+  vls_target_must_exceed_observed: >
+    0.959 (f) / 0.967 (m) are already achieved, so _ramp_long raises on any
+    target at or below them — a deliberate guard against an arm that does
+    nothing. 0.99 is roughly the best any SHIMS3 stratum reaches (50+ reads
+    0.989 / 0.992).
+  testing_saturates_at_x4: >
+    TEST_RATE_M x 4 = 2.0 against a ramp plateau of 0.5 clips the probability at
+    1.0 — every undiagnosed adult tested annually. C5 is the ceiling, not an
+    arbitrary stopping point.
+
+design:
+  cells: 30
+  seeds: 10
+  common_random_numbers: true    # every comparison paired; 026/029/031 likewise
+  start: 1985
+  stop: 2041
+  scenario_window: 2026-2030
+  outcome_window: 2026-2040
+  parameters: 024 design row 868 — one point, so intervals are seed noise only
+
+stop_condition:
+  what: C0/P0 must reproduce 031's baseline of 66,178
+  result: PASSED EXACTLY — 66,178, seed range 61,863-76,693, diff 0
+
+headline_results:
+  x_axis_span: 0.895 to 0.948        # saturates; 5.2% of PLHIV never suppressed
+  max_cascade_averts: 22697          # of 66,178; leaves 43,481
+  fsw_prep_pct_of_residual: [14.8, 14.4, 14.9, 14.8, 13.3, 9.4]
+  broad_prep_pct_of_residual: [22.1, 22.0, 23.7, 21.0, 19.3, 17.4]
+  marginal_at_testing_x3:
+    one_more_cascade_rung: 99
+    fsw_prep_instead: 5805
+  efficiency_py_per_infection_averted:
+    fsw: [3.1, 9.3]                  # baseline, saturation
+    broadest: [60.5, 120.5]
+
+known_limitations:
+  seed_noise_at_the_last_rungs: >
+    Paired SDs are ~2,000-3,500, so the x3-vs-x4 differences in the PrEP rows
+    are not resolvable. The no-PrEP row IS monotonic, so the axis is sound.
+  no_age_gradient_in_suppression: >
+    029 obs 6 — vls_coverage reads 6-10 pp too high at 15-24 against SHIMS3, so
+    the youth cascade gap is understated here.
+  one_route_per_suppression_level: >
+    The nested ladder traces a single path, so the composition effect of 031
+    obs 10 is not tested.

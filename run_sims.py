@@ -25,7 +25,7 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
              hiv_pars=None, network_pars=None, vmmc_class=None, hiv_class=None,
              datafolder=None, art_vls_coverage='phia',
              vls_stock_target=True, extra_interventions=None,
-             art_coverage=None, test_rate_m=1.0, test_rate_f=1.0):
+             art_coverage=None, test_rate_m=None, test_rate_f=None):
 
     # Condom data: stisim defaults x0.5 for non-marital pairings (act-level usage
     # is roughly half of DHS-reported "ever-used at last sex"). LL pairing kept

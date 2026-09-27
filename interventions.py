@@ -10,15 +10,25 @@ import stisim as sti
 
 
 
-def get_testing_products(test_rate_m=1.0, test_rate_f=1.0):
+# Adopted as model-v1.6 (exp 030). These are FITTED values, not assumptions:
+# scanned against the eight SHIMS3 awareness strata, with the two informative
+# male bands (25-34 and 35-49) picking out k_m = 0.5 independently of each
+# other. k_f rests on the 15-24 band alone -- the other three female bands are
+# saturated across the whole scanned range and carry almost no information.
+#
+# Pass 1.0 / 1.0 explicitly to reproduce experiments 001-029, which all ran with
+# a single sex-neutral rate.
+TEST_RATE_M = 0.5
+TEST_RATE_F = 0.6
+
+
+def get_testing_products(test_rate_m=None, test_rate_f=None):
     """
     Define HIV products and testing interventions
 
     Args:
         test_rate_m, test_rate_f: multipliers on the general-population testing
-            ramp, by sex. Both default to 1.0, which reproduces the single
-            sex-neutral rate every experiment through 029 ran with -- so this
-            argument changes nothing unless it is passed.
+            ramp, by sex. Default to the fitted TEST_RATE_M / TEST_RATE_F above.
 
     Why the general-population ramp is split by sex (exp 030)
     ---------------------------------------------------------
@@ -43,6 +53,10 @@ def get_testing_products(test_rate_m=1.0, test_rate_f=1.0):
     ANC testing is deliberately NOT scaled -- it is a real sex-specific route to
     diagnosis, not a modelling artefact, and women should keep it.
     """
+    if test_rate_m is None:
+        test_rate_m = TEST_RATE_M
+    if test_rate_f is None:
+        test_rate_f = TEST_RATE_F
 
     scaleup_years = np.arange(1990, 2021)  # Years for testing
     years = np.arange(1990, 2041)  # Years for simulation
@@ -133,7 +147,7 @@ def _normalize_age_bin_format(df):
 
 def make_interventions(vmmc_class=None, art_vls_coverage='phia',
                        vls_stock_target=True, art_coverage=None,
-                       test_rate_m=1.0, test_rate_f=1.0):
+                       test_rate_m=None, test_rate_f=None):
     # Upstream sti.VMMC gained prevalence/stock-target semantics in stisim 1.5.9
     # -- the behaviour the in-repo VMMCPrevalenceTarget subclass existed to
     # supply. Exp 017 confirmed the two are behaviourally identical (circumcision

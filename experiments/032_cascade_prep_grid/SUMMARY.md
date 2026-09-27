@@ -1,4 +1,4 @@
-# Exp 032 — The cascade saturates at 0.95 suppression and PrEP does not: past a doubling of testing, another cascade step buys 99 infections while FSW PrEP buys 5,805
+# Exp 032 — The cascade saturates at 0.95 suppression and PrEP does not: from a fully linked and suppressed cascade, all remaining treatment effort averts 9,795 infections and broad PrEP averts 12,620
 
 **Date:** 2026-09-27. **Model:** model-v1.6 (starsim 3.5.2 / stisim 1.5.11).
 **Compute:** raccoon, 110 workers, 6 cascade x 5 PrEP x 10 seeds = 300 sims,
@@ -20,9 +20,10 @@ side**, and 43,481 of the baseline 66,178 infections still occur.
 **PrEP's proportional value is flat across almost that entire range.** FSW PrEP
 removes **14.8%** of the remaining burden at baseline and **14.9%** at the
 suppression level a fully-linked, fully-suppressed cascade reaches; only at
-saturation does it fall to 9.4%. And the marginal comparison is stark: once
-testing is doubled, **one more step up the cascade averts 99 infections while
-FSW PrEP averts 5,805.**
+saturation does it fall to 9.4%. And from a cascade that has already linked
+everyone diagnosed and raised suppression to 0.99, **all remaining treatment
+effort averts 9,795 infections (SD 3,694) while adding broad PrEP at the same
+point averts 12,620 (SD 1,591)** — more, and more precisely estimated.
 
 ![Three panels against achieved viral suppression among all PLHIV: cumulative infections averted, incidence reduction at 2040, and PrEP's share of the remaining burden; the cascade axis saturates near 0.95 while PrEP's proportional contribution stays flat](figures/surface.png)
 
@@ -81,19 +82,26 @@ saturation.** Percent of the burden remaining at each rung that PrEP removes:
 a smaller denominator at an almost unchanged rate. Even at full saturation the
 broadest PrEP arm still removes 17.4% of what remains.
 
-**obs 6 — The marginal comparison is the decision-relevant number.** What one
-more step buys, from each position (no PrEP):
+**obs 6 — From a linked-and-suppressed cascade, prevention buys more than every
+remaining unit of treatment effort combined.** Paired by seed, starting at C2
+(0.937 achieved suppression):
 
-| from | one more cascade rung | FSW PrEP instead |
-|---|---|---|
-| baseline | **10,960** | 9,767 |
-| + linkage | 1,942 | 7,945 |
-| + VLS to 0.99 | 8,439 | 7,924 |
-| + testing x2 | 1,257 | 6,638 |
-| + testing x3 | **99** | **5,805** |
+| next move | infections averted | SD | seeds positive |
+|---|---|---|---|
+| all remaining cascade effort (C2 → C5) | 9,795 | 3,694 | 10/10 |
+| add FSW PrEP instead | 7,924 | 2,405 | 10/10 |
+| **add broad PrEP instead** | **12,620** | **1,591** | **10/10** |
 
-At baseline the two are comparable. **Past a doubling of testing the cascade is
-exhausted and PrEP is not** — 99 against 5,805, a 59-fold difference.
+**And past a doubling of testing the cascade is exhausted.** Going from testing
+x2 to saturation averts **+1,356 (SD 2,866, 6/10 seeds, range −1,342 to
++6,638)** — *not distinguishable from zero*. Adding FSW PrEP at the same point
+averts **6,638 (SD 1,927, 10/10 seeds)**.
+
+Report the cascade side of that second comparison as an absence, never as a
+point estimate: the earlier draft of this SUMMARY quoted the single-rung figure
+of 99 and a "59-fold difference", which is a ratio over a denominator that is
+noise. obs 8 said so in the same document. Corrected here before the SUMMARY was
+read by anyone.
 
 **obs 7 — FSW delivery stays an order of magnitude more efficient everywhere,
 and efficiency degrades as the cascade improves.** Person-years of PrEP per
@@ -145,10 +153,15 @@ CROI abstract.**
 
 The defensible headline: Eswatini already meets 95-95-95 in aggregate; pushing
 treatment to its structural ceiling leaves 5% of PLHIV unsuppressed and 43,481
-infections over 2026-2040; and PrEP removes a near-constant ~15% (FSW) to ~22%
+infections over 2026-2040; PrEP removes a near-constant ~15% (FSW) to ~22%
 (broad) of whatever remains at every level of treatment scale-up, at 3.1
 person-years per infection averted when delivered to FSW against 60.5 when
-delivered broadly.
+delivered broadly; and from a linked-and-suppressed cascade, broad PrEP averts
+more (12,620) than all remaining treatment effort combined (9,795).
+
+**Quote effects with their seed spread, and never quote a single cascade rung
+past testing x2** — those differences are not resolvable at 10 seeds (obs 6,
+obs 8).
 
 ## Next
 

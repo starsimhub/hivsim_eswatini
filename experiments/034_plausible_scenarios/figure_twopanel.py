@@ -36,15 +36,19 @@ AGE, SEX = "15+ (all)", "Both sexes"
 
 CASCADES = [("status_quo", "S0_status_quo", "Status-quo ART"),
             ("unaids_95", "S2_unaids_95", "Optimized ART")]
+# A coverage ladder rather than a widening-eligibility ladder: the question
+# the higher-coverage arms answer is how much more prevention can buy, so the
+# intermediate eligibility rungs (higher-risk AGYW, all AGYW) are dropped from
+# the figure. They remain in the table.
 PREPS = [("none", "P0_none", "No PrEP"),
-         ("fsw", "P1_fsw", "FSW 60%"),
-         ("agyw_risk", "P2_agyw_risk", "+ higher-risk AGYW"),
-         ("agyw_all", "P3_agyw_all", "+ all AGYW"),
-         ("women_25_34", "P4_women_25_34", "+ women 25-34")]
+         ("fsw", "P1_fsw", "FSW only\n(60%)"),
+         ("women_25_34", "P4_women_25_34", "All women\n30%"),
+         ("broad_60", "P5_broad_60", "All women\n60%"),
+         ("broad_90", "P6_broad_90", "All women\n90%")]
 
 CASC_COL = {"status_quo": "#7fa9d0", "unaids_95": "#2c6fbb"}
-PREP_COL = {"none": "#f0b862", "fsw": "#e8a33d", "agyw_risk": "#d98f27",
-            "agyw_all": "#c47c18", "women_25_34": "#a86710"}
+PREP_COL = {"none": "#f0b862", "fsw": "#f0b862", "women_25_34": "#e8a33d",
+            "broad_60": "#c47c18", "broad_90": "#8a5310"}
 GREY = "#d5dade"
 
 

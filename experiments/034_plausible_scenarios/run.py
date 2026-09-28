@@ -174,6 +174,17 @@ PREP_RUNGS = {
     "P4_women_25_34": [(_fsw, 0.60, "fsw"), (_agyw_risk_not_fsw, 0.30, "agywrisk"),
                        (_agyw_rest, 0.30, "agywrest"),
                        (_women_25_34_rest, 0.30, "w2534")],
+    # Higher general-population coverage. FSW stay at 60% -- they are already
+    # the most intensively covered group and the question is what raising
+    # coverage among OTHER women buys. Expect impact to grow sub-linearly and
+    # efficiency to worsen, because each increment reaches lower-incidence
+    # women; that is the point of running them.
+    "P5_broad_60": [(_fsw, 0.60, "fsw"), (_agyw_risk_not_fsw, 0.60, "agywrisk"),
+                    (_agyw_rest, 0.60, "agywrest"),
+                    (_women_25_34_rest, 0.60, "w2534")],
+    "P6_broad_90": [(_fsw, 0.90, "fsw"), (_agyw_risk_not_fsw, 0.90, "agywrisk"),
+                    (_agyw_rest, 0.90, "agywrest"),
+                    (_women_25_34_rest, 0.90, "w2534")],
 }
 
 

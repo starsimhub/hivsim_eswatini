@@ -36,13 +36,20 @@ OUT, FIG = HERE / "outputs", HERE / "figures"
 FIG.mkdir(parents=True, exist_ok=True)
 
 INK, MUTED = "#222222", "#6b6b6b"
-CASC_ORDER = ["testing_only", "unaids_95", "99_96_98"]
-CASC_LAB = {"testing_only": "testing x3 only",
+CASC_LAB = {"status_quo": "status quo ART",
+            "testing_only": "testing x3 only",
             "unaids_95": "95-95-95\nevery group",
             "99_96_98": "ART 96% + VLS 98%"}
-SHOW_PREP = ["none", "fsw", "women_25_34"]
-PREP_LAB = {"none": "no PrEP", "fsw": "FSW 60%",
-            "women_25_34": "+\nwomen 25-34"}
+PREP_LAB = {"none": "no PrEP", "fsw": "FSW\n60%",
+            "agyw_risk": "+ higher-\nrisk AGYW", "agyw_all": "+ all\nAGYW",
+            "women_25_34": "+ women\n25-34"}
+
+# Default is the abstract's set: two ART cascade scenarios against the four
+# LA-PrEP strategies, plus the no-PrEP reference. The status-quo/no-PrEP bar
+# is the baseline itself, so it renders as 100% not averted -- kept because it
+# anchors the bar height rather than leaving the reader to infer it.
+DEF_CASC = ["status_quo", "unaids_95"]
+DEF_PREP = ["none", "fsw", "agyw_risk", "agyw_all", "women_25_34"]
 
 
 def load(age, sex):
@@ -92,6 +99,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--age", default="15+ (all)")
     ap.add_argument("--sex", default="Both sexes")
+    ap.add_argument("--cascades", nargs="*", default=DEF_CASC)
+    ap.add_argument("--preps", nargs="*", default=DEF_PREP)
+    ap.add_argument("--out", default="attribution.png")
     a = ap.parse_args()
     t = load(a.age, a.sex)
     if t.empty:
@@ -111,11 +121,14 @@ def main():
         return (f"{100*r.aware:.0f}-{100*r.art_given_aware:.0f}"
                 f"-{100*r.vls_given_art:.0f}")
 
-    cascs = [c for c in CASC_ORDER if not np.isnan(cum(c, "none"))]
-    width, gap = 0.26, 0.02
-    fig, ax = plt.subplots(figsize=(14, 6.8))
-    for j, p in enumerate(SHOW_PREP):
-        xs = [i + (j - 1) * (width + gap) for i in range(len(cascs))]
+    cascs = [c for c in a.cascades if not np.isnan(cum(c, "none"))]
+    preps = [p for p in a.preps if not np.isnan(cum(cascs[0], p))]
+    n = len(preps)
+    width = min(0.8 / n, 0.26)
+    gap = 0.01
+    fig, ax = plt.subplots(figsize=(4.6 * len(cascs) + 4, 6.8))
+    for j, p in enumerate(preps):
+        xs = [i + (j - (n - 1) / 2) * (width + gap) for i in range(len(cascs))]
         for x, c in zip(xs, cascs):
             A = base - cum(c, "none")               # cascade alone
             B = base - cum("status_quo", p)         # PrEP alone
@@ -132,13 +145,13 @@ def main():
                    label="not averted" if first else None)
             for val, bot, light in ((cv, 0, True), (pv, cv, True),
                                     (rem, cv + pv, False)):
-                if val > base * 0.035:
+                if val > base * 0.045:
                     ax.text(x, bot + val / 2, f"{100*val/base:.0f}%",
                             ha="center", va="center", fontsize=7.4, zorder=3,
                             color="white" if light else INK)
         for x in xs:
-            ax.text(x, -base * 0.035, PREP_LAB[p], ha="center", va="top",
-                    fontsize=6.6, color=MUTED)
+            ax.text(x, -base * 0.03, PREP_LAB[p], ha="center", va="top",
+                    fontsize=6.4, color=MUTED)
 
     ax.axhline(base, color=INK, lw=1.4, ls="--", zorder=4)
     ax.text(len(cascs) - 0.42, base * 1.012,
@@ -164,12 +177,12 @@ def main():
              "overlap evenly and does not depend on which is counted first.",
              ha="center", fontsize=8.2, color=MUTED)
     fig.tight_layout(rect=[0, 0.02, 1, 1])
-    dest = FIG / "attribution.png"
+    dest = FIG / a.out
     fig.savefig(dest, dpi=140, bbox_inches="tight")
     plt.close(fig)
     print(f"wrote {dest}  (baseline {base:,.0f}, {a.sex}, {a.age})")
     for c in cascs:
-        for p in SHOW_PREP[1:]:
+        for p in [x for x in preps if x != "none"]:
             A, B = base - cum(c, "none"), base - cum("status_quo", p)
             J = base - cum(c, p)
             I = J - A - B

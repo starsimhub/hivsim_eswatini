@@ -262,11 +262,21 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n_seeds", type=int, default=N_SEEDS)
     ap.add_argument("--n_workers", type=int, default=110)
+    ap.add_argument("--cascades", nargs="*", default=None,
+                    help="subset of cascade rungs to run, e.g. S0_status_quo "
+                         "S2_unaids_95. Cells already cached are skipped, so "
+                         "narrowing a run never discards completed work.")
     ap.add_argument("--smoke", action="store_true",
                     help="corners of the grid, 1 seed -- proves the harness")
     a = ap.parse_args()
 
     cascades, preps = list(CASCADE), list(PREP_RUNGS)
+    if a.cascades:
+        unknown = [c for c in a.cascades if c not in CASCADE]
+        if unknown:
+            raise SystemExit(f"unknown cascade(s) {unknown}; "
+                             f"available: {list(CASCADE)}")
+        cascades = [c for c in cascades if c in a.cascades]
     seeds = list(range(1, a.n_seeds + 1))
     if a.smoke:
         cascades = ["S0_status_quo", "S3_99_96_98"]

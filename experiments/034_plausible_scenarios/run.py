@@ -189,8 +189,14 @@ def make_cell_kwargs(casc, prep):
                 vls_tbl, vls_t, SCEN_START, SCEN_REACH, stop=STOP)
 
     if test_mult != 1.0:
-        kw["test_rate_m"] = TEST_RATE_M * test_mult
-        kw["test_rate_f"] = TEST_RATE_F * test_mult
+        # test_boost, NOT test_rate_m/f. Multiplying the fitted rates scales
+        # testing back to 1990 and changes the epidemic BEFORE the scenario
+        # starts -- this experiment's first run did that, and its cascade arms
+        # entered 2026 with up to 13% lower incidence than status quo before
+        # their scenario had done anything. Those results were discarded.
+        kw["test_boost"] = test_mult
+        kw["test_boost_start"] = SCEN_START
+        kw["test_boost_reach"] = SCEN_REACH
 
     rungs = PREP_RUNGS[prep]
     if rungs:

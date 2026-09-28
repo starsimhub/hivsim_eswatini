@@ -25,7 +25,8 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
              hiv_pars=None, network_pars=None, vmmc_class=None, hiv_class=None,
              datafolder=None, art_vls_coverage='phia',
              vls_stock_target=True, extra_interventions=None,
-             art_coverage=None, test_rate_m=None, test_rate_f=None):
+             art_coverage=None, test_rate_m=None, test_rate_f=None,
+             test_boost=1.0, test_boost_start=2026, test_boost_reach=2030):
 
     # Condom data: stisim defaults x0.5 for non-marital pairings (act-level usage
     # is roughly half of DHS-reported "ever-used at last sex"). LL pairing kept
@@ -96,7 +97,10 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
                                        vls_stock_target=vls_stock_target,
                                        art_coverage=art_coverage,
                                        test_rate_m=test_rate_m,
-                                       test_rate_f=test_rate_f)
+                                       test_rate_f=test_rate_f,
+                                       test_boost=test_boost,
+                                       test_boost_start=test_boost_start,
+                                       test_boost_reach=test_boost_reach)
     # extra_interventions run after the defaults, so anything that re-targets a
     # state the defaults set (e.g. vls_stock_target.VLSStockTarget overriding the
     # suppression status sti.ART assigns at initiation) takes precedence.

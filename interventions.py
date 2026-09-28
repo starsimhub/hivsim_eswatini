@@ -22,7 +22,9 @@ TEST_RATE_M = 0.5
 TEST_RATE_F = 0.6
 
 
-def get_testing_products(test_rate_m=None, test_rate_f=None):
+def get_testing_products(test_rate_m=None, test_rate_f=None,
+                         test_boost=1.0, test_boost_start=2026,
+                         test_boost_reach=2030):
     """
     Define HIV products and testing interventions
 
@@ -88,9 +90,30 @@ def get_testing_products(test_rate_m=None, test_rate_f=None):
         return (~sim.networks.structuredsexual.fsw & ~sim.diseases.hiv.diagnosed
                 & ~sim.diseases.hiv.on_art & sim.people.female)
 
+    # test_boost is a FORWARD-LOOKING scenario lever, and is deliberately
+    # separate from test_rate_m/f.
+    #
+    # test_rate_m/f are the FITTED historical rates (exp 030) and must apply
+    # across the whole 1990-2040 series, because that is what was fitted.
+    # Multiplying them to represent a scenario silently rewrites testing back
+    # to 1990 and produces a different epidemic BEFORE the scenario starts --
+    # exp 034's first run did exactly that, and its cascade arms entered 2026
+    # with up to 13% lower incidence than status quo purely from the
+    # retroactive change. The viral-load-prevalence figure is what exposed it:
+    # the curves separated before the scenario-start line.
+    #
+    # So the boost ramps linearly from 1.0 at test_boost_start to test_boost at
+    # test_boost_reach, and is flat before and after -- matching how the ART
+    # and VLS coverage targets ramp in scenarios.py.
+    boost = np.ones_like(gp_prob, dtype=float)
+    if test_boost != 1.0:
+        span = max(test_boost_reach - test_boost_start, 1e-9)
+        w = np.clip((years - test_boost_start) / span, 0.0, 1.0)
+        boost = 1.0 + (test_boost - 1.0) * w
+
     other_testing_m = sti.HIVTest(
         years=years,
-        test_prob_data=np.clip(gp_prob * test_rate_m, 0, 1),
+        test_prob_data=np.clip(gp_prob * test_rate_m * boost, 0, 1),
         name='other_testing_m',
         eligibility=other_eligibility_m,
         label='other_testing_m',
@@ -98,7 +121,7 @@ def get_testing_products(test_rate_m=None, test_rate_f=None):
 
     other_testing_f = sti.HIVTest(
         years=years,
-        test_prob_data=np.clip(gp_prob * test_rate_f, 0, 1),
+        test_prob_data=np.clip(gp_prob * test_rate_f * boost, 0, 1),
         name='other_testing_f',
         eligibility=other_eligibility_f,
         label='other_testing_f',
@@ -147,7 +170,8 @@ def _normalize_age_bin_format(df):
 
 def make_interventions(vmmc_class=None, art_vls_coverage='phia',
                        vls_stock_target=True, art_coverage=None,
-                       test_rate_m=None, test_rate_f=None):
+                       test_rate_m=None, test_rate_f=None, test_boost=1.0,
+                       test_boost_start=2026, test_boost_reach=2030):
     # Upstream sti.VMMC gained prevalence/stock-target semantics in stisim 1.5.9
     # -- the behaviour the in-repo VMMCPrevalenceTarget subclass existed to
     # supply. Exp 017 confirmed the two are behaviourally identical (circumcision
@@ -166,7 +190,10 @@ def make_interventions(vmmc_class=None, art_vls_coverage='phia',
         else art_coverage)
     vmmc_data = _normalize_age_bin_format(pd.read_csv('data/vmmc_coverage.csv'))
     tests = get_testing_products(test_rate_m=test_rate_m,
-                                 test_rate_f=test_rate_f)
+                                 test_rate_f=test_rate_f,
+                                 test_boost=test_boost,
+                                 test_boost_start=test_boost_start,
+                                 test_boost_reach=test_boost_reach)
 
     # art_vls_coverage: fraction of ART initiators achieving viral suppression.
     # Defaults to 'phia' -- the measured series from vls_construction.py (SHIMS2

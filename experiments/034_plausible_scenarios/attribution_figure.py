@@ -42,7 +42,8 @@ CASC_LAB = {"status_quo": "status quo ART",
             "99_96_98": "ART 96% + VLS 98%"}
 PREP_LAB = {"none": "no PrEP", "fsw": "FSW\n60%",
             "agyw_risk": "+ higher-\nrisk AGYW", "agyw_all": "+ all\nAGYW",
-            "women_25_34": "+ women\n25-34"}
+            "women_25_34": "all women\n30%", "broad_60": "all women\n60%",
+            "broad_90": "all women\n90%"}
 
 # Default is the abstract's set: two ART cascade scenarios against the four
 # LA-PrEP strategies, plus the no-PrEP reference. The status-quo/no-PrEP bar

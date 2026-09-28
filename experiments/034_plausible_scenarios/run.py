@@ -133,9 +133,11 @@ CASCADE = {
     "S0_status_quo":     (None,   None,  1.0),
     "S1_testing_only":   (None,   None,  3.0),
     "S2_unaids_95":      (0.9025, None,  3.0),
-    "S3_best_in_class":  (0.96,   0.98,  4.0),
-    "S4_bound":          (0.999,  0.999, 4.0),   # NOT a scenario. A bound.
+    "S3_99_96_98":       (0.96,   0.98,  4.0),
 }
+# The theoretical bound (ART 0.999 / VLS 0.999) lived here as S4 and has been
+# removed: exp 033 already established it, it is not a scenario anybody could
+# pursue, and carrying it invited it being read as one.
 
 # --- the PrEP axis (y) ---------------------------------------------------------
 # Nested and DISJOINT. scenarios.agyw() is `female & 15-24` and does NOT exclude
@@ -267,7 +269,7 @@ def main():
     cascades, preps = list(CASCADE), list(PREP_RUNGS)
     seeds = list(range(1, a.n_seeds + 1))
     if a.smoke:
-        cascades = ["S0_status_quo", "S4_bound"]
+        cascades = ["S0_status_quo", "S3_99_96_98"]
         preps = ["P0_none", "P4_women_25_34"]
         seeds = [1]
 

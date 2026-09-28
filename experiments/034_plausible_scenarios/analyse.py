@@ -43,8 +43,7 @@ REF_031_BASELINE = 66178      # 031/032's baseline, for the stop check
 CASC_LAB = {"S0_status_quo": "status quo",
             "S1_testing_only": "testing x3 only",
             "S2_unaids_95": "95-95-95 every group",
-            "S3_best_in_class": "best-in-class",
-            "S4_bound": "BOUND (not a scenario)"}
+            "S3_99_96_98": "99-96-98 every group"}
 PREP_LAB = {"P0_none": "no PrEP", "P1_fsw": "FSW 60%",
             "P2_agyw_risk": "+ higher-risk AGYW", "P3_agyw_all": "+ all AGYW",
             "P4_women_25_34": "+ women 25-34"}
@@ -436,9 +435,6 @@ def fig_prep_by_counterfactual(grid, per_seed):
         # The bound is not a scenario; shade it out rather than dropping it, so
         # the plausible rungs can be read against it without being confused for
         # it.
-        if "S4_bound" in xpos:
-            ax.axvspan(xpos["S4_bound"] - 0.5, xpos["S4_bound"] + 0.5,
-                       color="#eceff1", zorder=0)
         for p in preps:
             g = grid[grid.prep == p].copy()
             g["x"] = g.cascade.map(xpos)
@@ -541,9 +537,6 @@ def fig_attribution(attr, baseline_total):
     cascs = [c for c in CASC_LAB if c != "S0_status_quo"]
     width, gap = 0.26, 0.02
     fig, ax = plt.subplots(figsize=(14, 6.8))
-    if "S4_bound" in cascs:
-        i = cascs.index("S4_bound")
-        ax.axvspan(i - 0.5, i + 0.5, color="#eceff1", zorder=0)
     for j, p in enumerate(show_prep):
         xs = [i + (j - 1) * (width + gap) for i in range(len(cascs))]
         for x, c in zip(xs, cascs):
@@ -589,8 +582,7 @@ def fig_attribution(attr, baseline_total):
              "ALL baseline infections, not of those averted, so the grey block "
              "is what neither lever prevents.\nThe two levers overlap, so the "
              "split uses Shapley attribution, which shares that overlap evenly "
-             "and does not depend on which is counted first. The shaded rung is "
-             "a BOUND, not a scenario.",
+             "and does not depend on which is counted first.",
              ha="center", fontsize=8.2, color=MUTED)
     fig.tight_layout(rect=[0, 0.02, 1, 1])
     fig.savefig(FIG / "attribution.png", dpi=140, bbox_inches="tight")
@@ -634,8 +626,6 @@ def fig_viremia(d):
         m, sd = g.mean(), g.std(ddof=1).fillna(0)
         w = (m.index >= 2020) & (m.index <= 2040)
         style = dict(lw=2.4, color=cols[c])
-        if c == "S4_bound":
-            style.update(ls="--", lw=1.8)
         ax.plot(m.index[w], m.values[w],
                 label=CASC_LAB[c].replace("\n", " "), zorder=3, **style)
         ax.fill_between(m.index[w], (m - sd).values[w], (m + sd).values[w],

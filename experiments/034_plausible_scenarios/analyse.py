@@ -624,7 +624,11 @@ def fig_viremia_by_age(d, cascade="S0_status_quo", years=(2026, 2030, 2040)):
     25-34 at 0.623 suppressed against women 50+ at 0.939.
     """
     sub = d[(d.cascade == cascade) & (d.prep == "P0_none")]
-    bands = [(a, a + 5) for a in range(15, 65, 5)] + [(65, 200)]
+    # Three broad groups rather than 5-year bands: the 5-year version was
+    # legible but noisy, and these are the groupings the cascade findings are
+    # already framed in (031: men 25-34 at 0.623 suppressed, women 50+ at
+    # 0.939). 25-49 merges the two middle SHIMS bins.
+    bands = [(15, 25), (25, 50), (50, 200)]
 
     def cols_for(stem, sex, lo, hi):
         """Columns of `stem` whose own band falls inside [lo, hi).
@@ -673,18 +677,24 @@ def fig_viremia_by_age(d, cascade="S0_status_quo", years=(2026, 2030, 2040)):
         return t
     t.to_csv(OUT / "viremia_by_age.csv", index=False)
 
-    ycols = {years[0]: "#2c3e50", years[1]: "#2c6fbb", years[2]: "#7bb8dd"}
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5.4), sharey=True)
+    ycols = {years[0]: "#2c3e50", years[1]: "#2c6fbb", years[2]: "#9ecae1"}
+    fig, axes = plt.subplots(1, 2, figsize=(11.5, 5.2), sharey=True)
+    width = 0.26
     for ax, sex in zip(axes, ("f", "m")):
         s = t[t.sex == sex]
         order = sorted(s.lo.unique())
         labels = [s[s.lo == lo].band.iloc[0] for lo in order]
-        for y in years:
+        for j, y in enumerate(years):
             g = s[s.year == y].set_index("lo").reindex(order)
-            ax.plot(range(len(order)), g.viremia.values, "-o", ms=5, lw=2,
-                    color=ycols[y], label=str(y))
+            xs = [i + (j - 1) * width for i in range(len(order))]
+            ax.bar(xs, g.viremia.values, width, color=ycols[y], label=str(y),
+                   zorder=2)
+            for x, v in zip(xs, g.viremia.values):
+                if np.isfinite(v):
+                    ax.text(x, v + 0.06, f"{v:.1f}", ha="center", fontsize=7.4,
+                            color=INK, zorder=3)
         ax.set_xticks(range(len(order)))
-        ax.set_xticklabels(labels, fontsize=8, rotation=45, ha="right")
+        ax.set_xticklabels(labels, fontsize=10)
         ax.set_xlabel("age group")
         ax.set_title(SEXLAB[sex] if "SEXLAB" in globals() else
                      {"f": "Women", "m": "Men"}[sex], fontsize=11)

@@ -112,8 +112,11 @@ NOTES = [
      "15+. Cascade percentages CANNOT be summed across strata by hand -- they "
      "are ratios with different denominators -- so the combined rows are "
      "computed from pooled counts, not averaged.", BODY),
-    ("The Summary sheet is 15-49, both sexes: the conventional HIV reporting "
-     "stratum.", BODY),
+    ("Two summary sheets, both sexes combined: 15-49 (the conventional HIV "
+     "reporting denominator) and all adults 15+ (the denominator the cascade "
+     "and viremia findings are framed in). They give different answers -- 50+ "
+     "carries a large and growing share of unsuppressed HIV -- so check which "
+     "one a number came from before quoting it.", BODY),
     ("", None),
     ("UNCERTAINTY", BOLD),
     ("A single calibrated parameter set was used, so all variation is "
@@ -241,45 +244,51 @@ def build():
     ws.freeze_panes = "E2"
     ws.auto_filter.ref = f"A1:{get_column_letter(len(COLS))}{len(t) + 1}"
 
-    # --- Summary (15+ only) ------------------------------------------------
-    # Summary is 15-49, both sexes -- the conventional HIV reporting stratum,
-    # and the one the abstract is written from.
-    ws = wb.create_sheet("Summary 15-49")
+    # --- Summary sheets ----------------------------------------------------
+    # BOTH reporting strata get their own tab, rather than one standing in for
+    # the other: 15-49 both sexes is the conventional HIV reporting
+    # denominator, while 15+ is all adults and is the denominator the cascade
+    # and viremia findings are framed in. They give different answers and the
+    # abstract uses both.
     keep = [c for c in COLS if c[0] not in
             ("sex", "age_group", "plhiv_2030", "baseline_incidence_2030",
              "incidence_2030", "_pct_inc_2030")]
-    for j, (_, head, fmt, width) in enumerate(keep, start=1):
-        c = ws.cell(row=1, column=j, value=head)
-        c.font, c.fill, c.border = HDR_FONT, HDR_FILL, BOX
-        c.alignment = Alignment(wrap_text=True, vertical="center",
-                                horizontal="center")
-        ws.column_dimensions[get_column_letter(j)].width = width
-    ws.row_dimensions[1].height = 34
-    sub = t[(t.age_group == "15-49")
-            & (t.sex == "Both sexes")].reset_index(drop=True)
-    for i, row in enumerate(sub.itertuples(), start=2):
-        f = {
-            "_averted": row.infections_averted,
-            "_pct_averted": row.pct_infections_averted / 100.0,
-            "_pct_decline": row.pct_decline_2026_2040 / 100.0,
-            "_pct_inc_2040": row.pct_diff_incidence_2040 / 100.0,
-        }
-        for j, (src, _h, fmt, _w) in enumerate(keep, start=1):
-            v = f[src] if src in f else getattr(row, src)
-            if isinstance(v, float) and pd.isna(v):
-                v = None
-            c = ws.cell(row=i, column=j, value=v)
-            c.font, c.border = BODY, BOX
-            if fmt:
-                c.number_format = fmt
-    ws.freeze_panes = "D2"
-    ws.auto_filter.ref = f"A1:{get_column_letter(len(keep))}{len(sub) + 1}"
+    summaries = [("Summary 15-49", "15-49"),
+                 ("Summary all adults 15+", "15+ (all)")]
+    counts = []
+    for sheet_name, age in summaries:
+        ws = wb.create_sheet(sheet_name)
+        for j, (_, head, fmt, width) in enumerate(keep, start=1):
+            c = ws.cell(row=1, column=j, value=head)
+            c.font, c.fill, c.border = HDR_FONT, HDR_FILL, BOX
+            c.alignment = Alignment(wrap_text=True, vertical="center",
+                                    horizontal="center")
+            ws.column_dimensions[get_column_letter(j)].width = width
+        ws.row_dimensions[1].height = 34
+        sub = t[(t.age_group == age)
+                & (t.sex == "Both sexes")].reset_index(drop=True)
+        for i, row in enumerate(sub.itertuples(), start=2):
+            f = {
+                "_averted": row.infections_averted,
+                "_pct_averted": row.pct_infections_averted / 100.0,
+                "_pct_decline": row.pct_decline_2026_2040 / 100.0,
+                "_pct_inc_2040": row.pct_diff_incidence_2040 / 100.0,
+            }
+            for j, (src, _h, fmt, _w) in enumerate(keep, start=1):
+                v = f[src] if src in f else getattr(row, src)
+                if isinstance(v, float) and pd.isna(v):
+                    v = None
+                c = ws.cell(row=i, column=j, value=v)
+                c.font, c.border = BODY, BOX
+                if fmt:
+                    c.number_format = fmt
+        ws.freeze_panes = "C2"
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(keep))}{len(sub) + 1}"
+        counts.append(f"{sheet_name}: {len(sub)} rows")
 
     wb.save(DEST)
     print(f"wrote {DEST}")
-    print(f"  Data: {len(t)} rows | Summary 15+: {len(sub)} rows")
-    print("  NEXT: run the xlsx skill's recalc.py -- formulas have no cached "
-          "values until then")
+    print(f"  Data: {len(t)} rows | " + " | ".join(counts))
 
 
 if __name__ == "__main__":

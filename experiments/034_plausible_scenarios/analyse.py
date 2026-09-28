@@ -405,6 +405,23 @@ def fig_xyz(grid):
     plt.close(fig)
 
 
+def casc_triplet(grid, c):
+    """The cascade a rung actually ACHIEVES, as 'aware-onART-suppressed' (2030).
+
+    Targets and outcomes are not the same thing: S2 targets 95-95-95 in every
+    stratum and lands at 99-95-96 in aggregate, because raising the laggards
+    pulls the average past the target. Labelling each scenario with its achieved
+    triplet keeps that visible instead of letting the target name stand in for
+    the result.
+    """
+    r = grid[(grid.cascade == c) & (grid.prep == "P0_none")]
+    if not len(r):
+        return ""
+    r = r.iloc[0]
+    return (f"{100*r.aware:.0f}-{100*r.on_art_given_aware:.0f}-"
+            f"{100*r.vls_given_art:.0f}")
+
+
 def fig_prep_by_counterfactual(grid, per_seed):
     """PrEP's contribution under each cascade counterfactual -- the headline.
 
@@ -451,8 +468,9 @@ def fig_prep_by_counterfactual(grid, per_seed):
         labs = []
         for c in cascs:
             r = grid[(grid.cascade == c) & (grid.prep == "P0_none")]
-            v = f"\n{r.vls_of_plhiv.iloc[0]:.3f}" if len(r) else ""
-            labs.append(CASC_LAB[c].replace(" every", "\nevery") + v)
+            v = f"\n{r.vls_of_plhiv.iloc[0]:.3f} suppressed" if len(r) else ""
+            labs.append(CASC_LAB[c].replace(" every", "\nevery")
+                        + f"\n{casc_triplet(grid, c)}" + v)
         ax.set_xticks(range(len(cascs)))
         ax.set_xticklabels(labs, fontsize=8)
         ax.set_ylabel(ylab)
@@ -564,7 +582,8 @@ def fig_attribution(attr, baseline_total):
     ax.text(len(cascs) - 0.42, baseline_total * 1.012,
             f"baseline: {baseline_total:,.0f} infections with no cascade "
             f"improvement and no PrEP", ha="right", fontsize=8, color=INK)
-    labs = [CASC_LAB[c].replace(" every", "\nevery") for c in cascs]
+    labs = [CASC_LAB[c].replace(" every", "\nevery")
+            + f"\n{casc_triplet(ref, c)}" for c in cascs]
     ax.set_xticks(range(len(cascs)))
     ax.set_xticklabels(labs, fontsize=9)
     ax.tick_params(axis="x", pad=34)
@@ -589,7 +608,80 @@ def fig_attribution(attr, baseline_total):
     plt.close(fig)
 
 
-def fig_viremia(d):
+def fig_viremia_by_age(d, cascade="S0_status_quo", years=(2026, 2030, 2040)):
+    """Age distribution of detectable viral load, at three time points.
+
+    Prevalence WITHIN each age band -- the share of people that age who are
+    living with HIV and not suppressed -- not each band's share of total
+    viremia. The first answers "where is the reservoir concentrated"; the
+    second would be dominated by the size of the age group.
+
+    Split by sex because that is where the cascade gaps are: 031 found men
+    25-34 at 0.623 suppressed against women 50+ at 0.939.
+    """
+    sub = d[(d.cascade == cascade) & (d.prep == "P0_none")]
+    bands = [(a, a + 5) for a in range(15, 65, 5)] + [(65, 200)]
+
+    rows = []
+    for (lo, hi) in bands:
+        members = [(a, a + 5) for a in range(15, 80, 5)] + [(80, 200)]
+        members = [(a, b) for a, b in members if a >= lo and b <= hi]
+        for sex in ("f", "m"):
+            inf = [f"cascadeage.n_infected_{sex}_{a}_{b}" for a, b in members]
+            eff = [f"cascadeage.n_effective_art_{sex}_{a}_{b}"
+                   for a, b in members]
+            alv = [f"popagesex.n_alive_{sex}_{a}_{b}" for a, b in members]
+            miss = [c for c in inf + eff + alv if c not in sub.columns]
+            if miss:
+                continue
+            v = 100 * (sub[inf].sum(axis=1) - sub[eff].sum(axis=1)) \
+                / sub[alv].sum(axis=1).replace(0, np.nan)
+            t = pd.DataFrame({"year": sub.timevec.values, "v": v.values})
+            g = t.groupby("year").v.mean()
+            for y in years:
+                if y in g.index:
+                    rows.append(dict(sex=sex, lo=lo, hi=hi,
+                                     band=f"{lo}-{hi-1}" if hi < 200
+                                     else f"{lo}+", year=y, viremia=g[y]))
+    t = pd.DataFrame(rows)
+    if t.empty:
+        print("  ! viremia-by-age: no matching columns")
+        return t
+    t.to_csv(OUT / "viremia_by_age.csv", index=False)
+
+    ycols = {years[0]: "#2c3e50", years[1]: "#2c6fbb", years[2]: "#7bb8dd"}
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.4), sharey=True)
+    for ax, sex in zip(axes, ("f", "m")):
+        s = t[t.sex == sex]
+        order = sorted(s.lo.unique())
+        labels = [s[s.lo == lo].band.iloc[0] for lo in order]
+        for y in years:
+            g = s[s.year == y].set_index("lo").reindex(order)
+            ax.plot(range(len(order)), g.viremia.values, "-o", ms=5, lw=2,
+                    color=ycols[y], label=str(y))
+        ax.set_xticks(range(len(order)))
+        ax.set_xticklabels(labels, fontsize=8, rotation=45, ha="right")
+        ax.set_xlabel("age group")
+        ax.set_title(SEXLAB[sex] if "SEXLAB" in globals() else
+                     {"f": "Women", "m": "Men"}[sex], fontsize=11)
+        ax.grid(alpha=0.28)
+    axes[0].set_ylabel("detectable viral load (% of age group)")
+    axes[0].legend(fontsize=9, frameon=False, title="year", title_fontsize=9)
+    fig.suptitle("Where the viral reservoir sits: detectable viral load by age "
+                 f"and sex, {CASC_LAB.get(cascade, cascade)}", fontsize=12.5)
+    fig.text(0.5, -0.06,
+             "Share of each age group living with HIV and not virally "
+             "suppressed. Prevalence within the band, not the band's share of "
+             "total viremia -- the latter would be\ndriven by how many people "
+             "are that age. No PrEP in any curve.",
+             ha="center", fontsize=8.2, color=MUTED)
+    fig.tight_layout(rect=[0, 0.02, 1, 0.95])
+    fig.savefig(FIG / "viremia_by_age.png", dpi=140, bbox_inches="tight")
+    plt.close(fig)
+    return t
+
+
+def fig_viremia(d, gridref=None):
     """Prevalence of detectable viral load among adults, by cascade scenario.
 
     Everything is computed on the 15+ population: the cascade analyzer's bands
@@ -626,8 +718,9 @@ def fig_viremia(d):
         m, sd = g.mean(), g.std(ddof=1).fillna(0)
         w = (m.index >= 2020) & (m.index <= 2040)
         style = dict(lw=2.4, color=cols[c])
-        ax.plot(m.index[w], m.values[w],
-                label=CASC_LAB[c].replace("\n", " "), zorder=3, **style)
+        trip = casc_triplet(gridref, c) if gridref is not None else ""
+        lab = CASC_LAB[c].replace("\n", " ") + (f"   {trip}" if trip else "")
+        ax.plot(m.index[w], m.values[w], label=lab, zorder=3, **style)
         ax.fill_between(m.index[w], (m - sd).values[w], (m + sd).values[w],
                         color=cols[c], alpha=0.13, lw=0, zorder=2)
         rows.append(dict(cascade=c, y2026=m.get(2026), y2030=m.get(2030),
@@ -767,7 +860,13 @@ def main():
             "not_averted_pct"]].round(1).to_string(index=False))
     fig_attribution(attr, baseline_total)
 
-    vir = fig_viremia(d)
+    vir = fig_viremia(d, grid)
+    va = fig_viremia_by_age(d)
+    if not va.empty:
+        print("\n=== Detectable viral load by age and sex (%), status quo, "
+              "no PrEP ===")
+        print(va.pivot_table(index=["sex", "band"], columns="year",
+                             values="viremia").round(2).to_string())
     print("\n=== Adults 15+ with detectable viral load (%), no PrEP ===")
     print(vir.round(3).to_string(index=False))
 

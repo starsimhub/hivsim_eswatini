@@ -26,8 +26,21 @@ on average, which is already done.
 | **S0** status quo | x1 | — | — | current trajectory |
 | **S1** testing only | **x3** | — | — | find everyone, expand nothing else |
 | **S2** UNAIDS 95-95-95 | x3 | **0.9025** | — | 95 aware x 95 linked, in every stratum |
-| **S3** best-in-class | x4 | 0.96 | 0.98 | every stratum performs like Eswatini's best |
-| **S4** bound | x4 | 0.999 | 0.999 | 033's top, retained ONLY as a limiting case |
+| **S3** 99-96-98 | x4 | 0.96 | 0.98 | near-universal testing; 96% of PLHIV on ART; 98% suppressed |
+
+Each rung is reported with the cascade it actually achieves (aware / on-ART
+given aware / suppressed given ART, 2030), because the target and the outcome
+are not the same thing — S2 targets 95-95-95 per stratum and lands at 99-95-96
+in aggregate, since raising the laggards pulls the average past the target.
+
+**The theoretical bound has been removed.** It sat here as S4 (ART 0.999 / VLS
+0.999) so the plausible rungs could be read against a limiting case. Exp 033
+already establishes it, nobody could pursue it, and carrying it in a table of
+scenarios invited it being read as one.
+
+**S3 is named for what it achieves, not for a judgement about it.** It was
+previously labelled "best-in-class", which asserted a comparison to other
+programmes that this experiment does not make.
 
 **Why testing x3 is the "first 95" rung.** Measured from 033's runs, per
 stratum at 2030: at x1 five of eight strata sit below 0.95 awareness (worst

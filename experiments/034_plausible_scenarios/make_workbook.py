@@ -1,0 +1,253 @@
+"""Build the exp 034 scenario workbook from scenario_table.csv.
+
+Four sheets: Notes (provenance and caveats), Scenarios (verbose definitions),
+Data (all rows, with the derived columns as live formulas), Summary (the 15+
+view, for reading).
+
+The derived columns -- infections averted, % averted, % incidence difference --
+are written as Excel formulas rather than as values, so the sheet recalculates
+if anyone edits an input and so the arithmetic is auditable in place.
+
+Usage (repo root):
+  python experiments/034_plausible_scenarios/make_workbook.py
+  python "<plugin>/skills/xlsx/scripts/recalc.py" <output.xlsx>
+"""
+
+import sys
+from pathlib import Path
+
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+
+HERE = Path(__file__).resolve().parent
+OUT = HERE / "outputs"
+SRC = OUT / "scenario_table.csv"
+DEST = OUT / "eswatini_scenario_table.xlsx"
+
+FONT = "Arial"
+HDR_FILL = PatternFill("solid", fgColor="1F3864")
+HDR_FONT = Font(name=FONT, bold=True, color="FFFFFF", size=10)
+BODY = Font(name=FONT, size=10)
+BOLD = Font(name=FONT, size=10, bold=True)
+TITLE = Font(name=FONT, size=13, bold=True)
+NOTE = Font(name=FONT, size=9, italic=True, color="595959")
+THIN = Side(style="thin", color="BFBFBF")
+BOX = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
+
+CASC_ORDER = ["status_quo", "testing_only", "unaids_95", "99_96_98"]
+CASC_PRETTY = {"status_quo": "1. Status quo",
+               "testing_only": "2. Testing x3 only",
+               "unaids_95": "3. 95-95-95 every group",
+               "99_96_98": "4. ART 96% + VLS 98%"}
+PREP_ORDER = ["none", "fsw", "agyw_risk", "agyw_all", "women_25_34"]
+PREP_PRETTY = {"none": "No PrEP", "fsw": "FSW 60%",
+               "agyw_risk": "+ higher-risk AGYW",
+               "agyw_all": "+ all AGYW",
+               "women_25_34": "+ women 25-34 (broad)"}
+AGE_ORDER = ["15-24", "25-49", "50+", "15+ (all)"]
+
+# (source column, header, number format, width)
+COLS = [
+    ("cascade_pretty",       "ART cascade scenario",            None,       26),
+    ("prep_pretty",          "LA-PrEP scenario",                None,       22),
+    ("sex",                  "Sex",                             None,       9),
+    ("age_group",            "Age group",                       None,       11),
+    ("aware",                "Aware of status",                 "0.0%",     14),
+    ("art_given_aware",      "On ART | aware",                  "0.0%",     14),
+    ("vls_given_art",        "Suppressed | on ART",             "0.0%",     18),
+    ("vls_of_plhiv",         "Suppressed | PLHIV",              "0.0%",     18),
+    ("plhiv_2030",           "PLHIV (2030)",                    "#,##0",    14),
+    ("baseline_infections",  "Infections, status quo",          "#,##0",    20),
+    ("cum_infections",       "Infections, scenario",            "#,##0",    20),
+    ("_averted",             "Infections averted",              "#,##0",    18),
+    ("_pct_averted",         "% infections averted",            "0.0%",     18),
+    ("baseline_incidence_2030", "Incidence 2030, status quo",   "0.000",    22),
+    ("incidence_2030",       "Incidence 2030, scenario",        "0.000",    22),
+    ("_pct_inc_2030",        "% lower incidence, 2030",         "0.0%",     20),
+    ("baseline_incidence_2040", "Incidence 2040, status quo",   "0.000",    22),
+    ("incidence_2040",       "Incidence 2040, scenario",        "0.000",    22),
+    ("_pct_inc_2040",        "% lower incidence, 2040",         "0.0%",     20),
+]
+
+NOTES = [
+    ("Eswatini HIV scenario table", TITLE),
+    ("", None),
+    ("Source: experiments/034_plausible_scenarios, model-v1.6 "
+     "(starsim 3.5.2 / stisim 1.5.11).", BODY),
+    ("Agent-based model HIVsim, fitted to Eswatini prevalence by age, sex and "
+     "year (PHIA/SHIMS), AIDS mortality, adult incidence, and the SHIMS3 2021 "
+     "treatment cascade.", BODY),
+    ("", None),
+    ("WHAT EACH NUMBER IS", BOLD),
+    ("Cascade percentages and PLHIV are read at 2030, when every scenario is "
+     "fully scaled up.", BODY),
+    ("Infections are cumulative over 2026-2040.", BODY),
+    ("Incidence is new infections per 100 susceptible person-years.", BODY),
+    ("Every comparison is against the status-quo, no-PrEP cell OF THE SAME "
+     "stratum -- not against the overall baseline.", BODY),
+    ("", None),
+    ("UNCERTAINTY", BOLD),
+    ("A single calibrated parameter set was used, so all variation is "
+     "stochastic (between-seed) and NOT parameter uncertainty. Nothing here is "
+     "a credible interval.", BODY),
+    ("", None),
+    ("KNOWN LIMITATIONS -- all three make the cascade scenarios OPTIMISTIC", BOLD),
+    ("1. The model has no never-testing subgroup. SHIMS3 implies ~3% of adults "
+     "over 50 remain unaware after decades; the model reaches ~1% and "
+     "structurally cannot do worse.", BODY),
+    ("2. stisim's stratified ART pathway ignores the linkage delay and the "
+     "initiation probability, so linkage can be driven higher than any real "
+     "programme achieves.", BODY),
+    ("3. Suppression given ART carries no age gradient, reading 6-10 "
+     "percentage points too high in 15-24s against SHIMS3. The youth "
+     "suppression deficit a real adherence or long-acting-ART programme would "
+     "target is therefore absent.", BODY),
+    ("", None),
+    ("TREAT WITH CAUTION", BOLD),
+    ("Testing x3 only, in men, shows MORE infections than status quo. See the "
+     "Scenarios sheet.", BODY),
+]
+
+
+def build():
+    if not SRC.exists():
+        sys.exit(f"missing {SRC} -- run scenario_table.py first")
+    t = pd.read_csv(SRC)
+    t["cascade_pretty"] = t.cascade_name.map(CASC_PRETTY)
+    t["prep_pretty"] = t.prep_name.map(PREP_PRETTY)
+    t["_c"] = t.cascade_name.map({c: i for i, c in enumerate(CASC_ORDER)})
+    t["_p"] = t.prep_name.map({p: i for i, p in enumerate(PREP_ORDER)})
+    t["_a"] = t.age_group.map({a: i for i, a in enumerate(AGE_ORDER)})
+    t = t.sort_values(["_c", "_p", "_a", "sex"]).reset_index(drop=True)
+
+    wb = Workbook()
+
+    # --- Notes -------------------------------------------------------------
+    ws = wb.active
+    ws.title = "Notes"
+    ws.column_dimensions["A"].width = 110
+    for i, (text, font) in enumerate(NOTES, start=1):
+        c = ws.cell(row=i, column=1, value=text)
+        c.font = font or BODY
+        c.alignment = Alignment(wrap_text=True, vertical="top")
+
+    # --- Scenarios ---------------------------------------------------------
+    ws = wb.create_sheet("Scenarios")
+    hdr = ["ART cascade scenario", "LA-PrEP scenario", "Full description"]
+    for j, h in enumerate(hdr, start=1):
+        c = ws.cell(row=1, column=j, value=h)
+        c.font, c.fill, c.border = HDR_FONT, HDR_FILL, BOX
+        c.alignment = Alignment(vertical="center")
+    for w, col in zip((26, 22, 140), "ABC"):
+        ws.column_dimensions[col].width = w
+    seen, r = set(), 2
+    for row in t.itertuples():
+        key = (row.cascade_pretty, row.prep_pretty)
+        if key in seen:
+            continue
+        seen.add(key)
+        for j, v in enumerate([row.cascade_pretty, row.prep_pretty,
+                               row.description], start=1):
+            c = ws.cell(row=r, column=j, value=v)
+            c.font, c.border = BODY, BOX
+            c.alignment = Alignment(wrap_text=True, vertical="top")
+        r += 1
+    r += 1
+    ws.cell(row=r, column=1, value="Caveat on scenario 2 (testing only)").font = BOLD
+    ws.cell(row=r + 1, column=1,
+            value="In men this scenario produces MORE infections than status "
+                  "quo. The ART coverage target is a fraction of all PLHIV and "
+                  "fills from the diagnosed pool, so tripling testing enlarges "
+                  "that pool without enlarging the number treated. Direction "
+                  "was consistent across seeds; magnitude should be read "
+                  "against the seed spread before being reported."
+            ).alignment = Alignment(wrap_text=True, vertical="top")
+    ws.cell(row=r + 1, column=1).font = NOTE
+
+    # --- Data --------------------------------------------------------------
+    ws = wb.create_sheet("Data")
+    for j, (_, head, fmt, width) in enumerate(COLS, start=1):
+        c = ws.cell(row=1, column=j, value=head)
+        c.font, c.fill, c.border = HDR_FONT, HDR_FILL, BOX
+        c.alignment = Alignment(wrap_text=True, vertical="center",
+                                horizontal="center")
+        ws.column_dimensions[get_column_letter(j)].width = width
+    ws.row_dimensions[1].height = 34
+
+    pos = {src: get_column_letter(j) for j, (src, *_) in enumerate(COLS, 1)}
+    for i, row in enumerate(t.itertuples(), start=2):
+        # Derived columns are FORMULAS, not values: the arithmetic stays
+        # auditable in the sheet and recalculates if an input is corrected.
+        f = {
+            "_averted": f"={pos['baseline_infections']}{i}"
+                        f"-{pos['cum_infections']}{i}",
+            "_pct_averted": f"=IFERROR(({pos['baseline_infections']}{i}"
+                            f"-{pos['cum_infections']}{i})"
+                            f"/{pos['baseline_infections']}{i},\"\")",
+            "_pct_inc_2030": f"=IFERROR(({pos['baseline_incidence_2030']}{i}"
+                             f"-{pos['incidence_2030']}{i})"
+                             f"/{pos['baseline_incidence_2030']}{i},\"\")",
+            "_pct_inc_2040": f"=IFERROR(({pos['baseline_incidence_2040']}{i}"
+                             f"-{pos['incidence_2040']}{i})"
+                             f"/{pos['baseline_incidence_2040']}{i},\"\")",
+        }
+        for j, (src, _h, fmt, _w) in enumerate(COLS, start=1):
+            v = f[src] if src in f else getattr(row, src)
+            if isinstance(v, float) and pd.isna(v):
+                v = None
+            c = ws.cell(row=i, column=j, value=v)
+            c.font, c.border = BODY, BOX
+            if fmt:
+                c.number_format = fmt
+            if src in ("cascade_pretty", "prep_pretty"):
+                c.alignment = Alignment(vertical="center")
+    ws.freeze_panes = "E2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(COLS))}{len(t) + 1}"
+
+    # --- Summary (15+ only) ------------------------------------------------
+    ws = wb.create_sheet("Summary 15+")
+    keep = [c for c in COLS if c[0] not in
+            ("age_group", "plhiv_2030", "baseline_incidence_2030",
+             "incidence_2030", "_pct_inc_2030")]
+    for j, (_, head, fmt, width) in enumerate(keep, start=1):
+        c = ws.cell(row=1, column=j, value=head)
+        c.font, c.fill, c.border = HDR_FONT, HDR_FILL, BOX
+        c.alignment = Alignment(wrap_text=True, vertical="center",
+                                horizontal="center")
+        ws.column_dimensions[get_column_letter(j)].width = width
+    ws.row_dimensions[1].height = 34
+    sub = t[t.age_group == "15+ (all)"].reset_index(drop=True)
+    kpos = {src: get_column_letter(j) for j, (src, *_) in enumerate(keep, 1)}
+    for i, row in enumerate(sub.itertuples(), start=2):
+        f = {
+            "_averted": f"={kpos['baseline_infections']}{i}"
+                        f"-{kpos['cum_infections']}{i}",
+            "_pct_averted": f"=IFERROR(({kpos['baseline_infections']}{i}"
+                            f"-{kpos['cum_infections']}{i})"
+                            f"/{kpos['baseline_infections']}{i},\"\")",
+            "_pct_inc_2040": f"=IFERROR(({kpos['baseline_incidence_2040']}{i}"
+                             f"-{kpos['incidence_2040']}{i})"
+                             f"/{kpos['baseline_incidence_2040']}{i},\"\")",
+        }
+        for j, (src, _h, fmt, _w) in enumerate(keep, start=1):
+            v = f[src] if src in f else getattr(row, src)
+            if isinstance(v, float) and pd.isna(v):
+                v = None
+            c = ws.cell(row=i, column=j, value=v)
+            c.font, c.border = BODY, BOX
+            if fmt:
+                c.number_format = fmt
+    ws.freeze_panes = "D2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(keep))}{len(sub) + 1}"
+
+    wb.save(DEST)
+    print(f"wrote {DEST}")
+    print(f"  Data: {len(t)} rows | Summary 15+: {len(sub)} rows")
+    print("  NEXT: run the xlsx skill's recalc.py -- formulas have no cached "
+          "values until then")
+
+
+if __name__ == "__main__":
+    build()

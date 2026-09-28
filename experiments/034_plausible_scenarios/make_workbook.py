@@ -56,7 +56,8 @@ PREP_PRETTY = {"none": "No PrEP", "fsw": "FSW 60%",
                "agyw_risk": "+ higher-risk AGYW",
                "agyw_all": "+ all AGYW",
                "women_25_34": "+ women 25-34 (broad)"}
-AGE_ORDER = ["15-24", "25-49", "50+", "15+ (all)"]
+AGE_ORDER = ["15-24", "25-49", "50+", "15-49", "15+ (all)"]
+SEX_ORDER = ["Both sexes", "Women", "Men"]
 
 # (source column, header, number format, width)
 COLS = [
@@ -69,6 +70,7 @@ COLS = [
     ("vls_given_art",        "Suppressed | on ART",             "0.0%",     18),
     ("vls_of_plhiv",         "Suppressed | PLHIV",              "0.0%",     18),
     ("plhiv_2030",           "PLHIV (2030)",                    "#,##0",    14),
+    ("incidence_2016",       "Incidence 2016 (historical)",     "0.000",    22),
     ("baseline_infections",  "Infections, status quo",          "#,##0",    20),
     ("cum_infections",       "Infections, scenario",            "#,##0",    20),
     ("_averted",             "Infections averted",              "#,##0",    18),
@@ -97,6 +99,15 @@ NOTES = [
     ("Incidence is new infections per 100 susceptible person-years.", BODY),
     ("Every comparison is against the status-quo, no-PrEP cell OF THE SAME "
      "stratum -- not against the overall baseline.", BODY),
+    ("Incidence 2016 is a historical anchor, a decade before any scenario "
+     "starts, so it is identical across scenarios by construction. It is "
+     "there to show how far incidence had already fallen.", BODY),
+    ("Strata are Women, Men and Both sexes, by 15-24 / 25-49 / 50+ / 15-49 / "
+     "15+. Cascade percentages CANNOT be summed across strata by hand -- they "
+     "are ratios with different denominators -- so the combined rows are "
+     "computed from pooled counts, not averaged.", BODY),
+    ("The Summary sheet is 15-49, both sexes: the conventional HIV reporting "
+     "stratum.", BODY),
     ("", None),
     ("UNCERTAINTY", BOLD),
     ("A single calibrated parameter set was used, so all variation is "
@@ -144,7 +155,8 @@ def build():
     t["_c"] = t.cascade_name.map({c: i for i, c in enumerate(CASC_ORDER)})
     t["_p"] = t.prep_name.map({p: i for i, p in enumerate(PREP_ORDER)})
     t["_a"] = t.age_group.map({a: i for i, a in enumerate(AGE_ORDER)})
-    t = t.sort_values(["_c", "_p", "_a", "sex"]).reset_index(drop=True)
+    t["_s"] = t.sex.map({s: i for i, s in enumerate(SEX_ORDER)})
+    t = t.sort_values(["_c", "_p", "_a", "_s"]).reset_index(drop=True)
 
     wb = Workbook()
 
@@ -223,9 +235,11 @@ def build():
     ws.auto_filter.ref = f"A1:{get_column_letter(len(COLS))}{len(t) + 1}"
 
     # --- Summary (15+ only) ------------------------------------------------
-    ws = wb.create_sheet("Summary 15+")
+    # Summary is 15-49, both sexes -- the conventional HIV reporting stratum,
+    # and the one the abstract is written from.
+    ws = wb.create_sheet("Summary 15-49")
     keep = [c for c in COLS if c[0] not in
-            ("age_group", "plhiv_2030", "baseline_incidence_2030",
+            ("sex", "age_group", "plhiv_2030", "baseline_incidence_2030",
              "incidence_2030", "_pct_inc_2030")]
     for j, (_, head, fmt, width) in enumerate(keep, start=1):
         c = ws.cell(row=1, column=j, value=head)
@@ -234,7 +248,8 @@ def build():
                                 horizontal="center")
         ws.column_dimensions[get_column_letter(j)].width = width
     ws.row_dimensions[1].height = 34
-    sub = t[t.age_group == "15+ (all)"].reset_index(drop=True)
+    sub = t[(t.age_group == "15-49")
+            & (t.sex == "Both sexes")].reset_index(drop=True)
     for i, row in enumerate(sub.itertuples(), start=2):
         f = {
             "_averted": row.infections_averted,

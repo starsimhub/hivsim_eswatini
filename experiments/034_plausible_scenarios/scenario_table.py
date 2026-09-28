@@ -44,7 +44,19 @@ WINDOW = (2026, 2040)
 CASC_YEAR = 2030          # cascade and residence times are read here
 
 AGE_GROUPS = [(15, 25, "15-24"), (25, 50, "25-49"), (50, 200, "50+"),
-              (15, 200, "15+ (all)")]
+              (15, 50, "15-49"), (15, 200, "15+ (all)")]
+
+# "all" sums men and women. 15-49 both sexes is the conventional HIV reporting
+# denominator, so it is carried alongside the sex-specific rows rather than
+# left to be summed by hand -- and the cascade percentages in particular
+# CANNOT be summed by hand, since they are ratios with different denominators.
+SEXES = [("f", "Women"), ("m", "Men"), ("all", "Both sexes")]
+
+# Incidence is also reported for 2016 as a historical anchor. It is a decade
+# before any scenario starts, so it is identical across every scenario by
+# construction -- it is there to show how far incidence had already fallen,
+# not to distinguish arms.
+ANCHOR_YEAR = 2016
 
 CASCADES = {
     "S0_status_quo": "Status quo. HIV testing, ART coverage and viral "
@@ -83,16 +95,19 @@ def cols_for(df, stem, sex, lo, hi):
     95-100 while cascadeage lumps everything above 80 into one 80-200 band, so
     a name built from one assumed grid silently misses on the other.
     """
-    out, pre = [], f"{stem}_{sex}_"
-    for c in df.columns:
-        if not c.startswith(pre):
-            continue
-        try:
-            a, b = int(c.rsplit("_", 2)[-2]), int(c.rsplit("_", 2)[-1])
-        except ValueError:
-            continue
-        if a >= lo and (b <= hi or hi >= 200):
-            out.append(c)
+    sexes = ("f", "m") if sex == "all" else (sex,)
+    out = []
+    for sx in sexes:
+        pre = f"{stem}_{sx}_"
+        for c in df.columns:
+            if not c.startswith(pre):
+                continue
+            try:
+                a, b = int(c.rsplit("_", 2)[-2]), int(c.rsplit("_", 2)[-1])
+            except ValueError:
+                continue
+            if a >= lo and (b <= hi or hi >= 200):
+                out.append(c)
     return out
 
 
@@ -130,7 +145,8 @@ def stratum_metrics(d, sex, lo, hi):
         n, dd = at(y, num), at(y, den)
         return n / dd if dd and np.isfinite(dd) and dd > 0 else np.nan
 
-    inc = {y: 100 * at(y, "newi") / at(y, "susc") for y in (2030, 2040)}
+    inc = {y: 100 * at(y, "newi") / at(y, "susc")
+           for y in (ANCHOR_YEAR, 2030, 2040)}
     lo_y, hi_y = WINDOW
     cum = g.loc[(g.index >= lo_y) & (g.index <= hi_y), "newi"].sum() / nseed
 
@@ -142,6 +158,7 @@ def stratum_metrics(d, sex, lo, hi):
         vls_of_plhiv=rate(y, "vls", "plhiv"),
         plhiv_2030=at(y, "plhiv") / nseed,
         cum_infections=cum,
+        incidence_2016=inc[ANCHOR_YEAR],
         incidence_2030=inc[2030], incidence_2040=inc[2040])
 
 
@@ -154,7 +171,7 @@ def main():
             if d is None:
                 continue
             for lo, hi, lab in AGE_GROUPS:
-                for sex in ("f", "m"):
+                for sex, sexlab in SEXES:
                     m = stratum_metrics(d, sex, lo, hi)
                     key = (sex, lab)
                     if casc == "S0_status_quo" and prep == "P0_none":
@@ -164,16 +181,14 @@ def main():
                         cascade_name=casc.split("_", 1)[1],
                         prep_name=prep.split("_", 1)[1],
                         description=f"{CASCADES[casc]} {PREPS[prep]}",
-                        sex={"f": "Women", "m": "Men"}[sex], age_group=lab,
-                        **m))
+                        sex=sexlab, sex_key=sex, age_group=lab, **m))
     t = pd.DataFrame(rows)
 
     # Everything relative to the status-quo, no-PrEP cell of the SAME stratum.
     for col, newcol in [("cum_infections", "baseline_infections"),
                         ("incidence_2030", "baseline_incidence_2030"),
                         ("incidence_2040", "baseline_incidence_2040")]:
-        t[newcol] = [base[(("f" if r.sex == "Women" else "m"), r.age_group)][col]
-                     for r in t.itertuples()]
+        t[newcol] = [base[(r.sex_key, r.age_group)][col] for r in t.itertuples()]
     t["infections_averted"] = t.baseline_infections - t.cum_infections
     t["pct_infections_averted"] = 100 * t.infections_averted / t.baseline_infections
     t["pct_diff_incidence_2030"] = (100 * (t.baseline_incidence_2030
@@ -187,6 +202,7 @@ def main():
              "aware", "art_given_aware", "vls_given_art", "vls_of_plhiv",
              "plhiv_2030", "baseline_infections", "cum_infections",
              "infections_averted", "pct_infections_averted",
+             "incidence_2016",
              "baseline_incidence_2030", "incidence_2030",
              "pct_diff_incidence_2030",
              "baseline_incidence_2040", "incidence_2040",

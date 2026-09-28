@@ -70,7 +70,8 @@ COLS = [
     ("vls_given_art",        "Suppressed | on ART",             "0.0%",     18),
     ("vls_of_plhiv",         "Suppressed | PLHIV",              "0.0%",     18),
     ("plhiv_2030",           "PLHIV (2030)",                    "#,##0",    14),
-    ("incidence_2016",       "Incidence 2016 (historical)",     "0.000",    22),
+    ("incidence_2026",       "Incidence 2026 (scenario start)", "0.000",    22),
+    ("_pct_decline",         "% incidence decline, 2026-2040",  "0.0%",     22),
     ("baseline_infections",  "Infections, status quo",          "#,##0",    20),
     ("cum_infections",       "Infections, scenario",            "#,##0",    20),
     ("_averted",             "Infections averted",              "#,##0",    18),
@@ -99,9 +100,14 @@ NOTES = [
     ("Incidence is new infections per 100 susceptible person-years.", BODY),
     ("Every comparison is against the status-quo, no-PrEP cell OF THE SAME "
      "stratum -- not against the overall baseline.", BODY),
-    ("Incidence 2016 is a historical anchor, a decade before any scenario "
-     "starts, so it is identical across scenarios by construction. It is "
-     "there to show how far incidence had already fallen.", BODY),
+    ("Incidence 2026 is the scenario start year and the reference for the "
+     "2026-2040 decline. Scenarios ramp THROUGH 2026 rather than switching on "
+     "at its start, so arms can differ slightly at that point -- that is the "
+     "intervention acting in its first year, not a contaminated baseline.",
+     BODY),
+    ("% incidence decline 2026-2040 is measured WITHIN a scenario. The "
+     "'% lower incidence' columns are measured AGAINST the status quo at the "
+     "stated year. The two answer different questions.", BODY),
     ("Strata are Women, Men and Both sexes, by 15-24 / 25-49 / 50+ / 15-49 / "
      "15+. Cascade percentages CANNOT be summed across strata by hand -- they "
      "are ratios with different denominators -- so the combined rows are "
@@ -218,6 +224,7 @@ def build():
         f = {
             "_averted": row.infections_averted,
             "_pct_averted": row.pct_infections_averted / 100.0,
+            "_pct_decline": row.pct_decline_2026_2040 / 100.0,
             "_pct_inc_2030": row.pct_diff_incidence_2030 / 100.0,
             "_pct_inc_2040": row.pct_diff_incidence_2040 / 100.0,
         }
@@ -254,6 +261,7 @@ def build():
         f = {
             "_averted": row.infections_averted,
             "_pct_averted": row.pct_infections_averted / 100.0,
+            "_pct_decline": row.pct_decline_2026_2040 / 100.0,
             "_pct_inc_2040": row.pct_diff_incidence_2040 / 100.0,
         }
         for j, (src, _h, fmt, _w) in enumerate(keep, start=1):

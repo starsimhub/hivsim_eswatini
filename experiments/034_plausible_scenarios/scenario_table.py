@@ -52,11 +52,12 @@ AGE_GROUPS = [(15, 25, "15-24"), (25, 50, "25-49"), (50, 200, "50+"),
 # CANNOT be summed by hand, since they are ratios with different denominators.
 SEXES = [("f", "Women"), ("m", "Men"), ("all", "Both sexes")]
 
-# Incidence is also reported for 2016 as a historical anchor. It is a decade
-# before any scenario starts, so it is identical across every scenario by
-# construction -- it is there to show how far incidence had already fallen,
-# not to distinguish arms.
-ANCHOR_YEAR = 2016
+# Incidence is also reported at 2026, the year every scenario starts scaling
+# up. It is the reference point for the 2026-2040 decline. Scenarios ramp
+# THROUGH 2026 rather than switching on at its start, so arms can differ very
+# slightly here; that is the intervention acting within its first year, not
+# contamination of the baseline.
+ANCHOR_YEAR = 2026
 
 CASCADES = {
     "S0_status_quo": "Status quo. HIV testing, ART coverage and viral "
@@ -158,7 +159,7 @@ def stratum_metrics(d, sex, lo, hi):
         vls_of_plhiv=rate(y, "vls", "plhiv"),
         plhiv_2030=at(y, "plhiv") / nseed,
         cum_infections=cum,
-        incidence_2016=inc[ANCHOR_YEAR],
+        incidence_2026=inc[ANCHOR_YEAR],
         incidence_2030=inc[2030], incidence_2040=inc[2040])
 
 
@@ -189,6 +190,11 @@ def main():
                         ("incidence_2030", "baseline_incidence_2030"),
                         ("incidence_2040", "baseline_incidence_2040")]:
         t[newcol] = [base[(r.sex_key, r.age_group)][col] for r in t.itertuples()]
+    # The scenario's own incidence decline across the projection window --
+    # this is the "incidence declined by XX% between 2026-2040" quantity,
+    # measured WITHIN a scenario rather than against the baseline.
+    t["pct_decline_2026_2040"] = (100 * (t.incidence_2026 - t.incidence_2040)
+                                  / t.incidence_2026)
     t["infections_averted"] = t.baseline_infections - t.cum_infections
     t["pct_infections_averted"] = 100 * t.infections_averted / t.baseline_infections
     t["pct_diff_incidence_2030"] = (100 * (t.baseline_incidence_2030
@@ -202,7 +208,7 @@ def main():
              "aware", "art_given_aware", "vls_given_art", "vls_of_plhiv",
              "plhiv_2030", "baseline_infections", "cum_infections",
              "infections_averted", "pct_infections_averted",
-             "incidence_2016",
+             "incidence_2026", "pct_decline_2026_2040",
              "baseline_incidence_2030", "incidence_2030",
              "pct_diff_incidence_2030",
              "baseline_incidence_2040", "incidence_2040",

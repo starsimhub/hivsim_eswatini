@@ -86,6 +86,10 @@ PREPS = {
     "P3_agyw_all": "LA-PrEP: FSW at 60%, plus 30% of all AGYW aged 15-24.",
     "P4_women_25_34": "LA-PrEP: FSW at 60%, plus 30% of all women aged 15-34. "
         "The broad-population arm.",
+    "P5_broad_60": "LA-PrEP: FSW at 60%, plus 60% of all women aged 15-34 -- "
+        "double the general-population coverage of the broad arm.",
+    "P6_broad_90": "LA-PrEP: 90% of female sex workers and of all women aged "
+        "15-34. Near-saturation of the eligible female population.",
 }
 
 

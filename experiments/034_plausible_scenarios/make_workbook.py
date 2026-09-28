@@ -51,11 +51,14 @@ CASC_PRETTY = {"status_quo": "1. Status quo",
                "testing_only": "2. Testing x3 only",
                "unaids_95": "3. 95-95-95 every group",
                "99_96_98": "4. ART 96% + VLS 98%"}
-PREP_ORDER = ["none", "fsw", "agyw_risk", "agyw_all", "women_25_34"]
+PREP_ORDER = ["none", "fsw", "agyw_risk", "agyw_all", "women_25_34",
+              "broad_60", "broad_90"]
 PREP_PRETTY = {"none": "No PrEP", "fsw": "FSW 60%",
                "agyw_risk": "+ higher-risk AGYW",
                "agyw_all": "+ all AGYW",
-               "women_25_34": "+ women 25-34 (broad)"}
+               "women_25_34": "+ women 25-34 (broad)",
+               "broad_60": "All women 15-34 at 60%",
+               "broad_90": "All women 15-34 at 90%"}
 AGE_ORDER = ["15-24", "25-49", "50+", "15-49", "15+ (all)"]
 SEX_ORDER = ["Both sexes", "Women", "Men"]
 

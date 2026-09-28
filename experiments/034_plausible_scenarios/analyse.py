@@ -597,6 +597,78 @@ def fig_attribution(attr, baseline_total):
     plt.close(fig)
 
 
+def fig_viremia(d):
+    """Prevalence of detectable viral load among adults, by cascade scenario.
+
+    Everything is computed on the 15+ population: the cascade analyzer's bands
+    start at 15, so mixing its treated counts with an all-ages PLHIV
+    denominator would inflate the viremic fraction by the paediatric
+    infections it never sees.
+
+    No PrEP in any curve -- PrEP changes who becomes infected, not how many of
+    the infected are suppressed, so holding it at zero isolates the cascade.
+    """
+    sub = d[d.prep == "P0_none"].copy()
+    inf = [c for c in sub.columns if c.startswith("cascadeage.n_infected_")]
+    eff = [c for c in sub.columns
+           if c.startswith("cascadeage.n_effective_art_")]
+    alive = []
+    for c in sub.columns:
+        if not c.startswith("popagesex.n_alive_"):
+            continue
+        parts = c.split("_")
+        if len(parts) >= 3 and parts[-3] in ("f", "m") and int(parts[-2]) >= 15:
+            alive.append(c)
+    sub["viremic"] = sub[inf].sum(axis=1) - sub[eff].sum(axis=1)
+    sub["adults"] = sub[alive].sum(axis=1)
+    sub["viremia_prev"] = 100 * sub.viremic / sub.adults
+
+    cascs = [c for c in CASC_LAB if (sub.cascade == c).any()]
+    cmap = plt.get_cmap("viridis")
+    cols = {c: cmap(i / max(len(cascs) - 1, 1)) for i, c in enumerate(cascs)}
+
+    fig, ax = plt.subplots(figsize=(9.6, 6.0))
+    rows = []
+    for c in cascs:
+        g = sub[sub.cascade == c].groupby("timevec").viremia_prev
+        m, sd = g.mean(), g.std(ddof=1).fillna(0)
+        w = (m.index >= 2020) & (m.index <= 2040)
+        style = dict(lw=2.4, color=cols[c])
+        if c == "S4_bound":
+            style.update(ls="--", lw=1.8)
+        ax.plot(m.index[w], m.values[w],
+                label=CASC_LAB[c].replace("\n", " "), zorder=3, **style)
+        ax.fill_between(m.index[w], (m - sd).values[w], (m + sd).values[w],
+                        color=cols[c], alpha=0.13, lw=0, zorder=2)
+        rows.append(dict(cascade=c, y2026=m.get(2026), y2030=m.get(2030),
+                         y2040=m.get(2040)))
+    ax.axvline(2026, ls=":", color=MUTED, lw=1)
+    ax.text(2026.15, ax.get_ylim()[1] * 0.97, "scenarios begin", fontsize=7.6,
+            color=MUTED, va="top")
+    ax.set_xlim(2020, 2040)
+    ax.set_ylim(bottom=0)
+    ax.set_xlabel("year")
+    ax.set_ylabel("adults (15+) with detectable viral load (%)")
+    ax.set_title("Prevalence of detectable HIV viral load in the adult "
+                 "population, by cascade scenario", fontsize=12)
+    ax.legend(fontsize=8.5, frameon=False, title="ART cascade (no PrEP)",
+              title_fontsize=9)
+    ax.grid(alpha=0.28)
+    fig.text(0.5, -0.04,
+             "Share of all adults 15+ who are living with HIV and not virally "
+             "suppressed -- the population reservoir available to transmit. "
+             "Bands are +/-1 SD across 10 seeds.\nThe dashed curve is a BOUND, "
+             "not a scenario: it requires every age-sex group to exceed the "
+             "best-performing group Eswatini has ever measured.",
+             ha="center", fontsize=8.2, color=MUTED)
+    fig.tight_layout(rect=[0, 0.02, 1, 1])
+    fig.savefig(FIG / "viremia_prevalence.png", dpi=140, bbox_inches="tight")
+    plt.close(fig)
+    t = pd.DataFrame(rows)
+    t.to_csv(OUT / "viremia_prevalence.csv", index=False)
+    return t
+
+
 def main():
     d = add_derived(load())
     pd.set_option("display.width", 220)
@@ -704,6 +776,10 @@ def main():
           [["cascade", "prep", "cascade_pct_of_all", "prep_pct_of_all",
             "not_averted_pct"]].round(1).to_string(index=False))
     fig_attribution(attr, baseline_total)
+
+    vir = fig_viremia(d)
+    print("\n=== Adults 15+ with detectable viral load (%), no PrEP ===")
+    print(vir.round(3).to_string(index=False))
 
     fig_prep_by_counterfactual(grid, per_seed)
     fig_surface(grid)

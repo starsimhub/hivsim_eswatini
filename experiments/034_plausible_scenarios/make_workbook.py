@@ -5,12 +5,22 @@ Data (all rows, with the derived columns as live formulas), Summary (the 15+
 view, for reading).
 
 The derived columns -- infections averted, % averted, % incidence difference --
-are written as Excel formulas rather than as values, so the sheet recalculates
-if anyone edits an input and so the arithmetic is auditable in place.
+are written as VALUES, not as Excel formulas. That is a deliberate departure
+from the usual preference for live formulas.
+
+openpyxl writes formulas with no cached value, so they read as blank to
+pandas and to most previewers until a spreadsheet engine evaluates them. The
+recalc step that would do that needs LibreOffice, which is available on
+neither this Windows laptop (its helper requires socket.AF_UNIX) nor the VM.
+Unverified formulas in a file nobody can recalculate here are worse than
+values: a bad reference would ship looking fine and surface only when a
+co-author opened it.
+
+The values come from the same pandas computation as scenario_table.csv, and
+each derivation is stated on the Notes sheet so the arithmetic stays checkable.
 
 Usage (repo root):
   python experiments/034_plausible_scenarios/make_workbook.py
-  python "<plugin>/skills/xlsx/scripts/recalc.py" <output.xlsx>
 """
 
 import sys
@@ -106,8 +116,22 @@ NOTES = [
      "target is therefore absent.", BODY),
     ("", None),
     ("TREAT WITH CAUTION", BOLD),
-    ("Testing x3 only, in men, shows MORE infections than status quo. See the "
+    ("Testing x3 only produces MORE infections in men and MORE AIDS deaths "
+     "overall than status quo. This is a real result, not noise. See the "
      "Scenarios sheet.", BODY),
+    ("", None),
+    ("HOW THE DERIVED COLUMNS ARE CALCULATED", BOLD),
+    ("Infections averted = (infections, status quo) - (infections, scenario), "
+     "for the same sex and age group.", BODY),
+    ("% infections averted = infections averted / (infections, status quo).",
+     BODY),
+    ("% lower incidence = ((incidence, status quo) - (incidence, scenario)) / "
+     "(incidence, status quo), at the stated year.", BODY),
+    ("These are stored as values rather than live formulas: openpyxl writes "
+     "formulas with no cached result, and neither machine used here has a "
+     "spreadsheet engine available to evaluate and verify them. Shipping "
+     "unverified formulas would hide a bad cell reference until someone "
+     "opened the file.", NOTE),
 ]
 
 
@@ -176,22 +200,14 @@ def build():
         ws.column_dimensions[get_column_letter(j)].width = width
     ws.row_dimensions[1].height = 34
 
-    pos = {src: get_column_letter(j) for j, (src, *_) in enumerate(COLS, 1)}
     for i, row in enumerate(t.itertuples(), start=2):
-        # Derived columns are FORMULAS, not values: the arithmetic stays
-        # auditable in the sheet and recalculates if an input is corrected.
+        # Percentages are stored as FRACTIONS so the 0.0% format renders them
+        # correctly; the CSV keeps them in percentage points.
         f = {
-            "_averted": f"={pos['baseline_infections']}{i}"
-                        f"-{pos['cum_infections']}{i}",
-            "_pct_averted": f"=IFERROR(({pos['baseline_infections']}{i}"
-                            f"-{pos['cum_infections']}{i})"
-                            f"/{pos['baseline_infections']}{i},\"\")",
-            "_pct_inc_2030": f"=IFERROR(({pos['baseline_incidence_2030']}{i}"
-                             f"-{pos['incidence_2030']}{i})"
-                             f"/{pos['baseline_incidence_2030']}{i},\"\")",
-            "_pct_inc_2040": f"=IFERROR(({pos['baseline_incidence_2040']}{i}"
-                             f"-{pos['incidence_2040']}{i})"
-                             f"/{pos['baseline_incidence_2040']}{i},\"\")",
+            "_averted": row.infections_averted,
+            "_pct_averted": row.pct_infections_averted / 100.0,
+            "_pct_inc_2030": row.pct_diff_incidence_2030 / 100.0,
+            "_pct_inc_2040": row.pct_diff_incidence_2040 / 100.0,
         }
         for j, (src, _h, fmt, _w) in enumerate(COLS, start=1):
             v = f[src] if src in f else getattr(row, src)
@@ -219,17 +235,11 @@ def build():
         ws.column_dimensions[get_column_letter(j)].width = width
     ws.row_dimensions[1].height = 34
     sub = t[t.age_group == "15+ (all)"].reset_index(drop=True)
-    kpos = {src: get_column_letter(j) for j, (src, *_) in enumerate(keep, 1)}
     for i, row in enumerate(sub.itertuples(), start=2):
         f = {
-            "_averted": f"={kpos['baseline_infections']}{i}"
-                        f"-{kpos['cum_infections']}{i}",
-            "_pct_averted": f"=IFERROR(({kpos['baseline_infections']}{i}"
-                            f"-{kpos['cum_infections']}{i})"
-                            f"/{kpos['baseline_infections']}{i},\"\")",
-            "_pct_inc_2040": f"=IFERROR(({kpos['baseline_incidence_2040']}{i}"
-                             f"-{kpos['incidence_2040']}{i})"
-                             f"/{kpos['baseline_incidence_2040']}{i},\"\")",
+            "_averted": row.infections_averted,
+            "_pct_averted": row.pct_infections_averted / 100.0,
+            "_pct_inc_2040": row.pct_diff_incidence_2040 / 100.0,
         }
         for j, (src, _h, fmt, _w) in enumerate(keep, start=1):
             v = f[src] if src in f else getattr(row, src)

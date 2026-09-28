@@ -70,6 +70,8 @@ COLS = [
     ("vls_given_art",        "Suppressed | on ART",             "0.0%",     18),
     ("vls_of_plhiv",         "Suppressed | PLHIV",              "0.0%",     18),
     ("plhiv_2030",           "PLHIV (2030)",                    "#,##0",    14),
+    ("_prep_cov",            "PrEP coverage, % of HIV-negative adults 15-49 "
+                             "(2030)",                          "0.0%",     26),
     ("incidence_2026",       "Incidence 2026 (scenario start)", "0.000",    22),
     ("_pct_decline",         "% incidence decline, 2026-2040",  "0.0%",     22),
     ("baseline_infections",  "Infections, status quo",          "#,##0",    20),
@@ -112,6 +114,12 @@ NOTES = [
      "15+. Cascade percentages CANNOT be summed across strata by hand -- they "
      "are ratios with different denominators -- so the combined rows are "
      "computed from pooled counts, not averaged.", BODY),
+    ("PrEP coverage is expressed against HIV-NEGATIVE adults 15-49, since "
+     "only they are eligible. It is a SCENARIO-level figure repeated across "
+     "every stratum row: the model exports PrEP recipients as a single total "
+     "with no age or sex breakdown, so a per-stratum coverage cannot be "
+     "derived. A few sex workers above 49 sit outside the denominator, which "
+     "inflates it very slightly.", BODY),
     ("Two summary sheets, both sexes combined: 15-49 (the conventional HIV "
      "reporting denominator) and all adults 15+ (the denominator the cascade "
      "and viremia findings are framed in). They give different answers -- 50+ "
@@ -228,6 +236,7 @@ def build():
             "_averted": row.infections_averted,
             "_pct_averted": row.pct_infections_averted / 100.0,
             "_pct_decline": row.pct_decline_2026_2040 / 100.0,
+            "_prep_cov": row.prep_coverage_hivneg_15_49 / 100.0,
             "_pct_inc_2030": row.pct_diff_incidence_2030 / 100.0,
             "_pct_inc_2040": row.pct_diff_incidence_2040 / 100.0,
         }
@@ -272,6 +281,7 @@ def build():
                 "_averted": row.infections_averted,
                 "_pct_averted": row.pct_infections_averted / 100.0,
                 "_pct_decline": row.pct_decline_2026_2040 / 100.0,
+                "_prep_cov": row.prep_coverage_hivneg_15_49 / 100.0,
                 "_pct_inc_2040": row.pct_diff_incidence_2040 / 100.0,
             }
             for j, (src, _h, fmt, _w) in enumerate(keep, start=1):

@@ -112,6 +112,31 @@ def cols_for(df, stem, sex, lo, hi):
     return out
 
 
+def prep_coverage(d, year=None):
+    """PrEP recipients as a share of HIV-NEGATIVE adults 15-49, at `year`.
+
+    HIV-negative is the right denominator: PrEP is only for people who could
+    acquire HIV, so dividing by the whole population understates coverage of
+    the group actually eligible.
+
+    This is a SCENARIO-LEVEL figure, not a per-stratum one, and is repeated
+    across every stratum row of a scenario. `hiv.n_on_prep` is a single total
+    in the model export with no age or sex breakdown, so a per-stratum
+    coverage cannot be computed from these outputs. The denominator is
+    15-49 both sexes; essentially all recipients fall in that range (female
+    sex workers, AGYW 15-24, women 25-34), but a few older sex workers will
+    sit outside it, which inflates the ratio very slightly.
+    """
+    year = CASC_YEAR if year is None else year
+    y = d[d.timevec == year]
+    if not len(y) or "hiv.n_on_prep" not in d.columns:
+        return np.nan
+    alive = y[cols_for(d, "popagesex.n_alive", "all", 15, 50)].sum(axis=1)
+    inf = y[cols_for(d, "popagesex.n_infected", "all", 15, 50)].sum(axis=1)
+    susc = (alive - inf).mean()
+    return 100 * y["hiv.n_on_prep"].mean() / susc if susc > 0 else np.nan
+
+
 def load(cascade, prep):
     f = glob.glob(str(SIMS / f"{cascade}__{prep}__*.parquet"))
     if not f:
@@ -171,6 +196,7 @@ def main():
             d = load(casc, prep)
             if d is None:
                 continue
+            cov = prep_coverage(d)
             for lo, hi, lab in AGE_GROUPS:
                 for sex, sexlab in SEXES:
                     m = stratum_metrics(d, sex, lo, hi)
@@ -182,7 +208,8 @@ def main():
                         cascade_name=casc.split("_", 1)[1],
                         prep_name=prep.split("_", 1)[1],
                         description=f"{CASCADES[casc]} {PREPS[prep]}",
-                        sex=sexlab, sex_key=sex, age_group=lab, **m))
+                        sex=sexlab, sex_key=sex, age_group=lab,
+                        prep_coverage_hivneg_15_49=cov, **m))
     t = pd.DataFrame(rows)
 
     # Everything relative to the status-quo, no-PrEP cell of the SAME stratum.
@@ -206,7 +233,8 @@ def main():
 
     order = ["cascade_name", "prep_name", "sex", "age_group", "description",
              "aware", "art_given_aware", "vls_given_art", "vls_of_plhiv",
-             "plhiv_2030", "baseline_infections", "cum_infections",
+             "plhiv_2030", "prep_coverage_hivneg_15_49",
+             "baseline_infections", "cum_infections",
              "infections_averted", "pct_infections_averted",
              "incidence_2026", "pct_decline_2026_2040",
              "baseline_incidence_2030", "incidence_2030",

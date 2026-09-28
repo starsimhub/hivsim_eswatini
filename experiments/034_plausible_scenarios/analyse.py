@@ -626,17 +626,37 @@ def fig_viremia_by_age(d, cascade="S0_status_quo", years=(2026, 2030, 2040)):
     sub = d[(d.cascade == cascade) & (d.prep == "P0_none")]
     bands = [(a, a + 5) for a in range(15, 65, 5)] + [(65, 200)]
 
+    def cols_for(stem, sex, lo, hi):
+        """Columns of `stem` whose own band falls inside [lo, hi).
+
+        Read from the data rather than assumed, because the two analyzers do
+        NOT share band edges: popagesex runs 5-year bands to 95-100 while
+        cascadeage lumps everything above 80 into one 80-200 band. Constructing
+        names from a single assumed grid silently produced no 65+ point at all
+        -- the membership test failed and the band disappeared from the figure
+        without any error.
+        """
+        out = []
+        pre = f"{stem}_{sex}_"
+        for c in sub.columns:
+            if not c.startswith(pre):
+                continue
+            try:
+                a, b = int(c.rsplit("_", 2)[-2]), int(c.rsplit("_", 2)[-1])
+            except ValueError:
+                continue
+            if a >= lo and (b <= hi or hi >= 200):
+                out.append(c)
+        return out
+
     rows = []
     for (lo, hi) in bands:
-        members = [(a, a + 5) for a in range(15, 80, 5)] + [(80, 200)]
-        members = [(a, b) for a, b in members if a >= lo and b <= hi]
         for sex in ("f", "m"):
-            inf = [f"cascadeage.n_infected_{sex}_{a}_{b}" for a, b in members]
-            eff = [f"cascadeage.n_effective_art_{sex}_{a}_{b}"
-                   for a, b in members]
-            alv = [f"popagesex.n_alive_{sex}_{a}_{b}" for a, b in members]
-            miss = [c for c in inf + eff + alv if c not in sub.columns]
-            if miss:
+            inf = cols_for("cascadeage.n_infected", sex, lo, hi)
+            eff = cols_for("cascadeage.n_effective_art", sex, lo, hi)
+            alv = cols_for("popagesex.n_alive", sex, lo, hi)
+            if not (inf and eff and alv):
+                print(f"  ! viremia-by-age: no columns for {sex} {lo}-{hi}")
                 continue
             v = 100 * (sub[inf].sum(axis=1) - sub[eff].sum(axis=1)) \
                 / sub[alv].sum(axis=1).replace(0, np.nan)

@@ -43,7 +43,11 @@ REF_031_BASELINE = 66178      # 031/032's baseline, for the stop check
 CASC_LAB = {"S0_status_quo": "status quo",
             "S1_testing_only": "testing x3 only",
             "S2_unaids_95": "95-95-95 every group",
-            "S3_99_96_98": "99-96-98 every group"}
+            # Named for its TARGETS (ART coverage 96% of PLHIV, suppression
+            # 98%), not for the cascade it lands on -- the achieved triplet is
+            # printed underneath by casc_triplet, and rounds to 100-96-98, so a
+            # label asserting 99-96-98 would contradict the number beside it.
+            "S3_99_96_98": "ART 96% + VLS 98%"}
 PREP_LAB = {"P0_none": "no PrEP", "P1_fsw": "FSW 60%",
             "P2_agyw_risk": "+ higher-risk AGYW", "P3_agyw_all": "+ all AGYW",
             "P4_women_25_34": "+ women 25-34"}
@@ -539,7 +543,7 @@ def attribution(per_seed, out=True):
     return t
 
 
-def fig_attribution(attr, baseline_total):
+def fig_attribution(attr, baseline_total, ref):
     """Every bar is the WHOLE epidemic, split by what did and did not prevent it.
 
     Adam's design. Expressing the split as a share of infections AVERTED makes
@@ -858,7 +862,7 @@ def main():
     print(attr[attr.cascade != "S0_status_quo"]
           [["cascade", "prep", "cascade_pct_of_all", "prep_pct_of_all",
             "not_averted_pct"]].round(1).to_string(index=False))
-    fig_attribution(attr, baseline_total)
+    fig_attribution(attr, baseline_total, grid)
 
     vir = fig_viremia(d, grid)
     va = fig_viremia_by_age(d)

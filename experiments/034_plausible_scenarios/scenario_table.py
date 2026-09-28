@@ -4,16 +4,14 @@ One row per scenario x sex x broad age group, carrying the cascade, the
 implied time spent at each cascade step, the infection burden, and incidence
 against the status-quo baseline.
 
-Cascade residence times use Little's Law (L = lambda W, so W = stock /
-throughput), NOT the empirically observed durations. In steady state the
-throughput of every cascade compartment equals the incidence flow, so:
+Cascade residence times -- mean years undiagnosed, diagnosed-but-untreated, and
+on-ART-but-unsuppressed, via Little's Law (W = stock / throughput, with
+incidence as the throughput) -- were built and then REMOVED at the researcher's
+request.
 
-    time undiagnosed        = (PLHIV - diagnosed)      / new infections
-    time diagnosed, not ART = (diagnosed - on ART)     / new infections
-    time on ART, not VLS    = (on ART - suppressed)    / new infections
-
-Three caveats, all of which inflate these estimates and none of which are
-corrected here:
+They are straightforward to reinstate, but do not do so without handling three
+biases, all of which inflate them and none of which is correctable from these
+outputs alone:
 
   1. The epidemic is NOT in steady state -- incidence is falling throughout, so
      the denominator understates the historical flow that built each stock.
@@ -24,9 +22,6 @@ corrected here:
      in the band they were in when infected. Ageing across band boundaries
      therefore breaks the per-stratum accounting, worst in the oldest group,
      which accumulates people who were infected decades earlier and younger.
-
-Read them as order-of-magnitude, and as comparable BETWEEN scenarios (where
-the biases largely cancel) rather than as absolute durations.
 
 Usage (repo root):  python experiments/034_plausible_scenarios/scenario_table.py
 """
@@ -140,19 +135,11 @@ def stratum_metrics(d, sex, lo, hi):
     cum = g.loc[(g.index >= lo_y) & (g.index <= hi_y), "newi"].sum() / nseed
 
     y = CASC_YEAR
-    flow = at(y, "newi")                      # Little's Law throughput
-    def wait(stock_hi, stock_lo):
-        s = at(y, stock_hi) - at(y, stock_lo)
-        return s / flow if flow and flow > 0 else np.nan
-
     return dict(
         aware=rate(y, "dx", "plhiv"),
         art_given_aware=rate(y, "art", "dx"),
         vls_given_art=rate(y, "vls", "art"),
         vls_of_plhiv=rate(y, "vls", "plhiv"),
-        yrs_to_diagnosis=wait("plhiv", "dx"),
-        yrs_dx_to_art=wait("dx", "art"),
-        yrs_art_to_vls=wait("art", "vls"),
         plhiv_2030=at(y, "plhiv") / nseed,
         cum_infections=cum,
         incidence_2030=inc[2030], incidence_2040=inc[2040])
@@ -198,7 +185,6 @@ def main():
 
     order = ["cascade_name", "prep_name", "sex", "age_group", "description",
              "aware", "art_given_aware", "vls_given_art", "vls_of_plhiv",
-             "yrs_to_diagnosis", "yrs_dx_to_art", "yrs_art_to_vls",
              "plhiv_2030", "baseline_infections", "cum_infections",
              "infections_averted", "pct_infections_averted",
              "baseline_incidence_2030", "incidence_2030",
@@ -212,11 +198,10 @@ def main():
           f"PrEP x {t.sex.nunique()} sexes x {t.age_group.nunique()} age groups")
 
     show = t[(t.prep_name == "none") & (t.age_group != "15+ (all)")]
-    print(f"\n=== Cascade and Little's-Law residence times at {CASC_YEAR}, "
-          f"no PrEP ===")
+    print(f"\n=== Conditional cascade at {CASC_YEAR}, no PrEP ===")
     print(show[["cascade_name", "sex", "age_group", "aware",
-                "art_given_aware", "vls_given_art", "yrs_to_diagnosis",
-                "yrs_dx_to_art", "yrs_art_to_vls"]].round(3).to_string(index=False))
+                "art_given_aware", "vls_given_art",
+                "vls_of_plhiv"]].round(3).to_string(index=False))
 
 
 if __name__ == "__main__":

@@ -123,7 +123,7 @@ def main():
             color=INK)
     ax.set_xticks(range(len(PREPS)))
     ax.set_xticklabels([p[2] for p in PREPS], fontsize=9)
-    ax.tick_params(axis="x", pad=104)
+    ax.tick_params(axis="x", pad=74)
     ax.set_ylabel("cumulative HIV infections in adults 15+, 2026-2040")
     ax.set_ylim(0, base * 1.06)
     ax.grid(axis="y", alpha=0.28, zorder=0)
@@ -176,7 +176,7 @@ def main():
     ax.set_xlabel("year")
     ax.set_ylabel("HIV incidence, adults 15+ (per 100 person-years, log2)")
     ax.grid(alpha=0.28, which="both")
-    ax.legend(fontsize=8, frameon=False, loc="lower left")
+    ax.legend(fontsize=8, frameon=False, loc="upper right")
     ax.set_title("B. Incidence over time", fontsize=11.5, loc="left", pad=26)
     ax.text(2026.2, 0.115, "scenarios begin", fontsize=7.4, color=MUTED)
 

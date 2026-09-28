@@ -127,8 +127,12 @@ def main():
     ax.set_ylabel("cumulative HIV infections in adults 15+, 2026-2040")
     ax.set_ylim(0, base * 1.06)
     ax.grid(axis="y", alpha=0.28, zorder=0)
-    ax.legend(fontsize=8.5, frameon=False, loc="lower left")
-    ax.set_title("A. Who prevents the infections", fontsize=11.5, loc="left")
+    # Above the axes: inside, it sat on top of the segment labels of the
+    # leftmost bars, which are the shortest.
+    ax.legend(fontsize=8.5, frameon=False, ncol=3, loc="lower left",
+              bbox_to_anchor=(0, 1.0))
+    ax.set_title("A. Who prevents the infections", fontsize=11.5, loc="left",
+                 pad=26)
 
     # --- Panel B ----------------------------------------------------------
     ax = axes[1]
@@ -136,7 +140,11 @@ def main():
                "#2c3e50", "-")]
     curves += [("S2_unaids_95", "P0_none", "Age-gaps filled ART",
                 CASC_COL["unaids_95"], "-")]
-    curves += [("S2_unaids_95", pk_s, f"Age-gaps filled ART + {lab}",
+    # The PrEP labels already begin with "+" for the cumulative rungs, so
+    # prefixing another one gave "ART + + higher-risk AGYW".
+    curves += [("S2_unaids_95", pk_s,
+                f"Age-gaps filled ART "
+                f"{lab if lab.startswith('+') else '+ ' + lab}",
                 PREP_COL[pk], "-")
                for pk, pk_s, lab in PREPS if pk != "none"]
     for casc, prep, lab, col, ls in curves:
@@ -145,13 +153,17 @@ def main():
             print(f"  ! missing {casc} {prep}")
             continue
         m, sd = r
-        w = (m.index >= 2020) & (m.index <= 2040)
+        # Start at 2024. Every arm is identical before 2026 by construction,
+        # so a longer run-in stacks six overlapping curves and six overlapping
+        # SD bands into a muddy block that carries no information; two years
+        # is enough to show they begin together.
+        w = (m.index >= 2024) & (m.index <= 2040)
         ax.plot(m.index[w], m.values[w], ls, lw=2.2, color=col, label=lab,
                 zorder=3)
         ax.fill_between(m.index[w], (m - sd).values[w], (m + sd).values[w],
                         color=col, alpha=0.10, lw=0, zorder=2)
     ax.axvline(2026, ls=":", color=MUTED, lw=1)
-    ax.set_xlim(2020, 2040)
+    ax.set_xlim(2024, 2040)
     ax.set_ylim(bottom=0)
     ax.set_xlabel("year")
     ax.set_ylabel("HIV incidence, adults 15+ (per 100 person-years)")

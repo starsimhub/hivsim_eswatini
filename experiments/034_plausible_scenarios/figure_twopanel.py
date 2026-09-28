@@ -33,8 +33,8 @@ FIG.mkdir(parents=True, exist_ok=True)
 INK, MUTED = "#222222", "#6b6b6b"
 AGE, SEX = "15+ (all)", "Both sexes"
 
-CASCADES = [("status_quo", "S0_status_quo", "Status quo ART (95-95-95)"),
-            ("unaids_95", "S2_unaids_95", "Age-gaps filled ART")]
+CASCADES = [("status_quo", "S0_status_quo", "Status-quo ART"),
+            ("unaids_95", "S2_unaids_95", "Optimized ART")]
 PREPS = [("none", "P0_none", "No PrEP"),
          ("fsw", "P1_fsw", "FSW 60%"),
          ("agyw_risk", "P2_agyw_risk", "+ higher-risk AGYW"),
@@ -85,8 +85,8 @@ def main():
 
     base = cum("status_quo", "none")
 
-    fig, axes = plt.subplots(1, 2, figsize=(19, 7.2),
-                             gridspec_kw=dict(width_ratios=[1.15, 1]))
+    fig, axes = plt.subplots(1, 2, figsize=(15.5, 7.6),
+                             gridspec_kw=dict(width_ratios=[1, 1]))
 
     # --- Panel A ----------------------------------------------------------
     ax = axes[0]
@@ -131,19 +131,19 @@ def main():
     # leftmost bars, which are the shortest.
     ax.legend(fontsize=8.5, frameon=False, ncol=3, loc="lower left",
               bbox_to_anchor=(0, 1.0))
-    ax.set_title("A. Who prevents the infections", fontsize=11.5, loc="left",
-                 pad=26)
+    ax.set_title("A. Infections averted by scenario", fontsize=11.5,
+                 loc="left", pad=26)
 
     # --- Panel B ----------------------------------------------------------
     ax = axes[1]
     curves = [("S0_status_quo", "P0_none", "Status quo ART (95-95-95)",
                "#2c3e50", "-")]
-    curves += [("S2_unaids_95", "P0_none", "Age-gaps filled ART",
+    curves += [("S2_unaids_95", "P0_none", "Optimized ART",
                 CASC_COL["unaids_95"], "-")]
     # The PrEP labels already begin with "+" for the cumulative rungs, so
     # prefixing another one gave "ART + + higher-risk AGYW".
     curves += [("S2_unaids_95", pk_s,
-                f"Age-gaps filled ART "
+                f"Optimized ART "
                 f"{lab if lab.startswith('+') else '+ ' + lab}",
                 PREP_COL[pk], "-")
                for pk, pk_s, lab in PREPS if pk != "none"]
@@ -164,27 +164,25 @@ def main():
                         color=col, alpha=0.10, lw=0, zorder=2)
     ax.axvline(2026, ls=":", color=MUTED, lw=1)
     ax.set_xlim(2024, 2040)
-    ax.set_ylim(bottom=0)
+    # log2: equal vertical distances are equal halvings, so the arms' relative
+    # rates of decline are directly comparable by slope rather than by eye
+    # against a shrinking absolute gap.
+    ax.set_yscale("log", base=2)
+    ticks = [0.125, 0.25, 0.5, 1.0]
+    ax.set_yticks(ticks)
+    ax.set_yticklabels([f"{t:g}" for t in ticks])
+    ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+    ax.set_ylim(0.11, 1.0)
     ax.set_xlabel("year")
-    ax.set_ylabel("HIV incidence, adults 15+ (per 100 person-years)")
-    ax.grid(alpha=0.28)
-    ax.legend(fontsize=8, frameon=False)
-    ax.set_title("B. Incidence over time", fontsize=11.5, loc="left")
-    ax.text(2026.2, ax.get_ylim()[1] * 0.02, "scenarios begin", fontsize=7.4,
-            color=MUTED)
+    ax.set_ylabel("HIV incidence, adults 15+ (per 100 person-years, log2)")
+    ax.grid(alpha=0.28, which="both")
+    ax.legend(fontsize=8, frameon=False, loc="lower left")
+    ax.set_title("B. Incidence over time", fontsize=11.5, loc="left", pad=26)
+    ax.text(2026.2, 0.115, "scenarios begin", fontsize=7.4, color=MUTED)
 
-    fig.suptitle("Long-acting PrEP and ART cascade gaps in Eswatini, "
-                 "2026-2040", fontsize=13)
-    fig.text(0.5, -0.03,
-             "Panel A: each bar is the full status-quo burden; percentages are "
-             "shares of ALL baseline infections, so grey is what neither lever "
-             "prevents. The two levers overlap, so the split uses Shapley "
-             "attribution,\nwhich shares that overlap evenly. Panel B: bands "
-             "are +/-1 SD across 50 seeds. 'Status quo ART (95-95-95)' is "
-             "Eswatini's current national attainment; 'age-gaps filled' "
-             "reaches 95-95-95 within every age and sex group.",
-             ha="center", fontsize=8.2, color=MUTED)
-    fig.tight_layout(rect=[0, 0.02, 1, 0.95])
+    fig.suptitle("Combined impact of long-acting PrEP and treatment cascade "
+                 "improvements", fontsize=13)
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
     dest = FIG / "abstract_two_panel.png"
     fig.savefig(dest, dpi=140, bbox_inches="tight")
     plt.close(fig)

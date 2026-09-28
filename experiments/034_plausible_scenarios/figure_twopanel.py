@@ -16,6 +16,7 @@ time series, which the summary tables do not carry.
 Usage:  python experiments/034_plausible_scenarios/figure_twopanel.py
 """
 
+import argparse
 import glob
 import sys
 from pathlib import Path
@@ -73,6 +74,12 @@ def incidence(casc_key, prep_key):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--logy", action="store_true",
+                    help="log2 incidence axis in panel B (default: linear)")
+    ap.add_argument("--out", default="abstract_two_panel.png")
+    a = ap.parse_args()
+
     csv = OUT / "scenario_table.csv"
     if not csv.exists():
         sys.exit("need outputs/scenario_table.csv -- run scenario_table.py")
@@ -136,7 +143,7 @@ def main():
 
     # --- Panel B ----------------------------------------------------------
     ax = axes[1]
-    curves = [("S0_status_quo", "P0_none", "Status quo ART (95-95-95)",
+    curves = [("S0_status_quo", "P0_none", "Status-quo ART",
                "#2c3e50", "-")]
     curves += [("S2_unaids_95", "P0_none", "Optimized ART",
                 CASC_COL["unaids_95"], "-")]
@@ -164,26 +171,33 @@ def main():
                         color=col, alpha=0.10, lw=0, zorder=2)
     ax.axvline(2026, ls=":", color=MUTED, lw=1)
     ax.set_xlim(2024, 2040)
-    # log2: equal vertical distances are equal halvings, so the arms' relative
-    # rates of decline are directly comparable by slope rather than by eye
-    # against a shrinking absolute gap.
-    ax.set_yscale("log", base=2)
-    ticks = [0.125, 0.25, 0.5, 1.0]
-    ax.set_yticks(ticks)
-    ax.set_yticklabels([f"{t:g}" for t in ticks])
-    ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-    ax.set_ylim(0.11, 1.0)
+    if a.logy:
+        # log2: equal vertical distance is equal halving, so relative rates of
+        # decline compare by slope. Available but not the default -- on a
+        # linear axis the absolute size of the remaining burden stays legible,
+        # which is what the infections-averted panel is denominated in.
+        ax.set_yscale("log", base=2)
+        ticks = [0.125, 0.25, 0.5, 1.0]
+        ax.set_yticks(ticks)
+        ax.set_yticklabels([f"{t:g}" for t in ticks])
+        ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+        ax.set_ylim(0.11, 1.0)
+        ylab = "HIV incidence, adults 15+ (per 100 person-years, log2)"
+    else:
+        ax.set_ylim(0, None)
+        ylab = "HIV incidence, adults 15+ (per 100 person-years)"
     ax.set_xlabel("year")
-    ax.set_ylabel("HIV incidence, adults 15+ (per 100 person-years, log2)")
+    ax.set_ylabel(ylab)
     ax.grid(alpha=0.28, which="both")
     ax.legend(fontsize=8, frameon=False, loc="upper right")
     ax.set_title("B. Incidence over time", fontsize=11.5, loc="left", pad=26)
-    ax.text(2026.2, 0.115, "scenarios begin", fontsize=7.4, color=MUTED)
+    ax.text(2026.2, ax.get_ylim()[0] + 0.02 * (ax.get_ylim()[1] - ax.get_ylim()[0]),
+            "scenarios begin", fontsize=7.4, color=MUTED)
 
     fig.suptitle("Combined impact of long-acting PrEP and treatment cascade "
                  "improvements", fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.95])
-    dest = FIG / "abstract_two_panel.png"
+    dest = FIG / a.out
     fig.savefig(dest, dpi=140, bbox_inches="tight")
     plt.close(fig)
     print(f"wrote {dest}")

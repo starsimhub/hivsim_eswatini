@@ -20,3 +20,16 @@ Right now I want to build a dashboard which I can use to check on Adam Akullian'
 * Extract and plot results, particularly age-prevalence curves
 * I plan on using jupyter notebooks to interactively run my code. Please also give me advice on how to do this in VSCode, using VSCode as a python ide
 
+### Next steps
+
+Some additions, for amending the output from above:
+
+* The comparison between the model output and the calibration targets is good, but I need to see a couple of other sets of plots:
+  * Need to also see comparison between how the simulation looks against data 2021. age prevalence curves for 2021 as well as against the three years that we calibrated against
+  * Need to also see plots of 90-90-90 metrics: % who know their diagnosis; % on art among those who know their diagnosis; % VLS on effective art among those who know their diagnosis
+    * All ages for men, women, and both
+    * age-prevalence curves for men and women
+    * compare these against data, where data are available
+  * Need to see plots of incidence
+    * all ages men and women over time
+    * age-incidence curves for men and women for both

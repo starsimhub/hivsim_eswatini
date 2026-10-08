@@ -1,0 +1,445 @@
+"""Build and check Adam Akullian's calibrated Eswatini HIVSim model.
+
+Cell-marked (`# %%`) for VS Code's Python Interactive window / Jupyter
+extension -- same convention as run_sims.py and run_calibrations.py in the
+repo root. See the chat reply this was written for re: how to run it there.
+
+What this does
+---------------
+1. Build the calibrated model (the point-fit parameter set, see below)
+2. Run it, 10 seeds
+3. Save the results
+4. Plot age-stratified HIV prevalence against PHIA, using the repo's one
+   shared implementation of that figure (standard_figures.py)
+
+Which "calibrated model"?
+--------------------------
+As of this writing there is no finished calibration to load: wave 2 history
+matching (experiments/025_hm_wave2) has not produced any output anywhere in
+the repo (checked: no parquet/obj/csv under experiments/025_hm_wave2 or
+results/). CLAUDE.md records it as blocked on compute with no posterior yet.
+
+The best available substitute is the point fit from experiments/024_hm_wave1:
+design row 868, the single draw that fit 48/48 calibration targets (see
+experiments/024_hm_wave1/SUMMARY.md and experiments/026_scenarios/README.md,
+"Parameter basis"). experiments/026 already uses this exact point fit as its
+calibrated baseline. BEST and build_pars() below are copied verbatim from
+experiments/026_scenarios/run.py (itself copied from 025's _one_point) --
+not re-derived, per that file's own comment, so this check stays comparable
+to what 024/026 actually ran. If wave 2 lands, this script should be pointed
+at the new NROY sample instead of BEST.
+
+Model-version caveat -- READ THIS ONE
+--------------------------------------
+024's row 868 was fit against stisim ~1.5.11 (pyproject.toml pins
+`stisim>=1.5.11 # ... verified behaviourally neutral`) and hivsim_eswatini
+model-v1.3. As of 2026-10-08 the editable stisim/starsim checkouts in this
+workspace were pulled to latest `main` -- stisim 1.5.11 -> 1.7.0, starsim
+3.5.2 -> 3.7.2 -- a materially bigger jump than what was ever checked for
+behavioural neutrality. This was not optional: before the pull, `sti.ART`'s
+`vls_coverage` kwarg (which interventions.py calls) had been renamed to
+`p_effective_art` with different semantics (a per-agent suppression
+probability, not a time-varying coverage series) on a merged branch, which
+broke run_sims.make_sim() outright, not just this script. The pull fixed
+that crash, but it means the fit this script reports is the 024 point-fit
+*parameters* re-run against a newer *model*, not a reproduction of 024's
+own result. It visually tracked PHIA well when last checked (MAE ~0.04
+across 54 age-stratified prevalence strata, 28/54 within PHIA's own CI) --
+but if you need an exact reproduction of 024/026's numbers, that requires
+checking out stisim/starsim at the commits those experiments actually used
+(not recorded by exact commit anywhere in this repo as of this writing --
+only the `stisim>=1.5.11` pin and the `model-v1.3` hivsim_eswatini tag).
+"""
+
+# %% Imports
+import os
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import sciris as sc
+import starsim as ss
+import matplotlib.pyplot as plt
+
+REPO = Path(__file__).resolve().parent.parent  # hivsim_eswatini/
+sys.path.insert(0, str(REPO))
+# run_sims.py reads data/*.csv by path relative to cwd (see its own usage
+# comment in experiments/026_scenarios/run.py), not relative to __file__, so
+# this must run with cwd == repo root regardless of where it's launched from
+# (e.g. VS Code's Interactive window defaults to this file's own directory).
+os.chdir(REPO)
+
+from run_sims import make_sim                  # noqa: E402
+from analyzers import PopByAgeSex              # noqa: E402
+import standard_figures as sf                  # noqa: E402
+
+OUT = Path(__file__).resolve().parent / "outputs"
+OUT.mkdir(parents=True, exist_ok=True)
+
+
+# %% A local cascade analyzer: 90-90-90 by 5-year age band and sex
+# Not added to analyzers.py (shared code -- see hivsim_eswatini/CLAUDE.md on
+# the "shared code surface" and why personal checks shouldn't touch it).
+# Needed because neither existing analyzer covers this: PopByAgeSex tracks
+# n_infected by 5-year band but not diagnosed/on_art/effective_art, and
+# analyzers.Cascade tracks those but only for two coarse ranges (15-49, 15+),
+# not 5-year bands. Same AGE_BINS as PopByAgeSex so the two line up on one
+# x-axis. hiv.diagnosed / hiv.on_art / hiv.on_effective_art are stisim HIV
+# disease states (see stisim/stisim/diseases/hiv.py).
+class CascadeByAgeSex(ss.Analyzer):
+    AGE_BINS = [(a, a + 5) for a in range(0, 100, 5)]
+
+    def __init__(self, *args, name="cascadeagesex", **kwargs):
+        super().__init__(*args, **kwargs)
+        self.name = name
+
+    def init_results(self):
+        super().init_results()
+        res = []
+        for sex in ("f", "m"):
+            for lo, hi in self.AGE_BINS:
+                for stem in ("n_infected", "n_diagnosed", "n_on_art",
+                            "n_effective_art"):
+                    res.append(ss.Result(f"{stem}_{sex}_{lo}_{hi}", dtype=int,
+                                         scale=True))
+        self.define_results(*res)
+
+    def step(self):
+        sim, ti = self.sim, self.ti
+        ppl, hiv = sim.people, sim.diseases.hiv
+        alive = ppl.alive
+        for sex, sex_bool in (("f", ppl.female), ("m", ppl.male)):
+            for lo, hi in self.AGE_BINS:
+                in_bin = alive & sex_bool & (ppl.age >= lo) & (ppl.age < hi)
+                r = self.results
+                r[f"n_infected_{sex}_{lo}_{hi}"][ti] = (in_bin & hiv.infected).count()
+                r[f"n_diagnosed_{sex}_{lo}_{hi}"][ti] = (in_bin & hiv.diagnosed).count()
+                r[f"n_on_art_{sex}_{lo}_{hi}"][ti] = (in_bin & hiv.on_art).count()
+                r[f"n_effective_art_{sex}_{lo}_{hi}"][ti] = (
+                    in_bin & hiv.on_effective_art).count()
+
+# %% The calibrated parameter set
+# 024 design row 868 -- copied from experiments/026_scenarios/run.py::BEST
+# (== experiments/025_hm_wave2/run.py::TRUTH_NATURAL). Do not hand-edit without
+# checking both of those stay in sync; see module docstring.
+BEST = dict(beta_m2f=0.014161835611057863, rel_beta_f2m=0.3097261030208422,
+            s_f_young=2.224000314771824, age_gap_shift=0.0699801603950227,
+            age_gap_sd_mult=1.5001144712607821, prop_f0=0.608751696061895,
+            prop_m0=0.4742150061435999)
+
+# Fixed (non-calibrated) network structure, also copied from 026.
+AGE_DIFF_BASE = {"teens": [(7, 3), (6, 3), (5, 1)],
+                 "young": [(8, 3), (7, 3), (5, 2)],
+                 "adult": [(8, 3), (7, 3), (5, 2)]}
+CONC_BASE = {"f1_conc": 0.15, "f2_conc": 0.25, "m1_conc": 0.15, "m2_conc": 0.5}
+REL_INIT_PREV = 0.2
+
+N_SEEDS = 10
+START, STOP = 1985, 2026  # matches 024's fitting window, not 026's 2041
+                          # projection window -- this is a calibration check,
+                          # not a scenario run.
+
+
+def build_pars(p):
+    """Map the 7 free calibration params onto make_sim's hiv_pars/network_pars.
+
+    Identical to experiments/026_scenarios/run.py::build_pars and
+    experiments/024_hm_wave1/run.py::_one_point's parameter mapping.
+    """
+    hiv_pars = dict(
+        beta_m2f=p["beta_m2f"], rel_beta_f2m=p["rel_beta_f2m"],
+        rel_init_prev=REL_INIT_PREV,
+        rel_sus_age=[(15, 25, "f", p["s_f_young"]),
+                     (25, 50, "f", 1.0), (15, 50, "m", 1.0)])
+    shift, sd_mult = p["age_gap_shift"], p["age_gap_sd_mult"]
+    network_pars = dict(
+        prop_f0=p["prop_f0"], prop_m0=p["prop_m0"],
+        age_diff_pars={g: [(max(m + shift, 1.0), max(s * sd_mult, 0.2))
+                           for m, s in v] for g, v in AGE_DIFF_BASE.items()},
+        **CONC_BASE)
+    return hiv_pars, network_pars
+
+
+# %% Build + run the model, one seed at a time (so this also works unparallelized
+# if you want to step through make_sim/sim.run() in the debugger)
+hiv_pars, network_pars = build_pars(BEST)
+
+
+def run_one_seed(seed):
+    sim = make_sim(seed=seed, start=START, stop=STOP, verbose=-1,
+                   hiv_pars=hiv_pars, network_pars=network_pars,
+                   analyzers=[PopByAgeSex(), CascadeByAgeSex()])
+    sim.run()
+    d = sim.to_df(resample="year", use_years=True, sep=".")
+    d["seed"] = seed
+    return d
+
+
+print(f"Running {N_SEEDS} seeds of the calibrated model ({START}-{STOP})...")
+dfs = sc.parallelize(run_one_seed, iterarg=list(range(1, N_SEEDS + 1)),
+                     ncpus=min(N_SEEDS, 8))
+df = pd.concat(dfs, ignore_index=True)
+print(f"Done: {len(df)} rows across {N_SEEDS} seeds")
+
+# %% Save results
+# sc.saveobj (pickle via sciris), matching run_sims.py's own __main__ convention
+# (results/eswatini_sim.df) -- avoids a pyarrow dependency this env doesn't have.
+sim_path = OUT / "dtc_check_sim.df"
+sc.saveobj(sim_path, df)
+print(f"Saved sim output to {sim_path}")
+
+# %% Extract and plot age-prevalence curves against PHIA
+# standard_figures.py is the repo's single shared implementation of the
+# age-stratified prevalence-fit figure -- every experiment's run.py calls this
+# same function, so this figure is directly comparable to 024's and 026's.
+# Its docstring has the sex-coding note for calibration_data/
+# prevalence_by_age_sex.csv: Gender==0 is MALE there (the OPPOSITE of
+# stisim's internal 0=female convention) -- plot_prevalence_fit already
+# handles this; just don't reach into that CSV's Gender column directly
+# without re-reading that note.
+fig_path = OUT / "prevalence_fit_dtc_check.png"
+scorecard = sf.plot_prevalence_fit(df, label="DTC_check (024 row 868)",
+                                   outpath=fig_path)
+print(f"Saved age-prevalence fit figure to {fig_path}")
+print("Scorecard (lower mae/bias = better fit):")
+for k, v in scorecard.items():
+    print(f"  {k}: {v}")
+
+# %% Prevalence including 2021 (validation hold-out), alongside the 3 fitted years
+# 2021 was NOT used to fit 024's row 868 -- it's CLAUDE.md's validation
+# hold-out. Included here as an out-of-sample check only, by extending the
+# same shared figure via its `tg` override, so the computation (denominators,
+# CI shading, scorecard) is identical to the calibration-only figure above --
+# the only thing that changes is which rows are in `tg`.
+v21 = pd.read_csv(REPO / "calibration_data" / "prevalence_2021_VALIDATION_ONLY.csv")
+v21["sex"] = v21.Gender.map(sf.PHIA_SEX)         # same 0=M,1=F convention as the fitted file
+v21["age_low"] = v21["start age"].astype(int)
+v21 = v21[["Year", "sex", "age_low", "Count", "NationalPrevalence", "lb", "ub"]].rename(
+    columns={"Year": "year", "NationalPrevalence": "phia"})
+tg_incl_2021 = pd.concat([sf.load_targets(), v21], ignore_index=True)
+
+fig_path_2021 = OUT / "prevalence_fit_incl_2021_dtc_check.png"
+scorecard_2021 = sf.plot_prevalence_fit(
+    df, label="DTC_check (024 row 868) incl. 2021 VALIDATION hold-out",
+    outpath=fig_path_2021, tg=tg_incl_2021)
+print(f"Saved prevalence-incl-2021 figure to {fig_path_2021}")
+print("Scorecard incl. 2021 (those strata were NOT fitted -- read as out-of-sample):")
+for k, v in scorecard_2021.items():
+    print(f"  {k}: {v}")
+
+# %% Incidence: time series + age profile, vs SHIMS
+# Both are standard_figures.py's existing shared implementation -- nothing new
+# to write, same reuse logic as the prevalence figure above.
+# plot_incidence_fit: 15-49 time series by sex, plus the 2016 age-band
+# comparison (the only year SHIMS publishes bands for).
+# plot_incidence_age_profile: the model's own full 5-year-band age profile for
+# 2011 and 2016. Both carry CLAUDE.md's false-recency-bias caveat ON THE
+# FIGURE ITSELF, not just in a comment: the published age-banded incidence is
+# NOT a fitting target (assay false-recency bias inflates older age bands --
+# see CLAUDE.md's `incidence_construction.py` note), and 2011 has no
+# age-banded data at all (SHIMS1 published only an 18-49 aggregate), which the
+# 2011 panel states directly.
+fig_inc_fit = OUT / "incidence_fit_dtc_check.png"
+sf.plot_incidence_fit(df, label="DTC_check (024 row 868)", outpath=fig_inc_fit)
+print(f"Saved incidence time-series + 2016 age-band figure to {fig_inc_fit}")
+
+fig_inc_age = OUT / "incidence_age_profile_dtc_check.png"
+sf.plot_incidence_age_profile(df, label="DTC_check (024 row 868)",
+                              outpath=fig_inc_age, years=(2011, 2016))
+print(f"Saved full age-resolution incidence profile to {fig_inc_age}")
+
+# %% 90-90-90 cascade over time (15-49), by sex
+# Three stages, each CONDITIONAL on the previous stage (the standard UNAIDS
+# framing):
+#   1st: % of PLHIV who know their status    = n_diagnosed     / n_infected
+#   2nd: % of diagnosed who are on ART        = n_on_art        / n_diagnosed
+#   3rd: % of those on ART who are suppressed = n_effective_art / n_on_art
+#
+# Data availability -- checked against every file in calibration_data/ and
+# external_data/ before writing this, not assumed:
+#   1st (diagnosed): no target of ANY kind exists anywhere in this project.
+#     Model-only; the figure says so rather than silently omitting a data
+#     series a reader might assume just wasn't plotted.
+#   2nd (on ART): calibration_data/art_coverage_by_age_sex.csv exists, but its
+#     denominator is ALL PLHIV (it's what sti.ART's `coverage` input targets --
+#     see interventions.py), not diagnosed. That's a DIFFERENT quantity from
+#     "of diagnosed", so it's compared on the age-stratified figure below
+#     (where that file's age bins live) against the model's matching-
+#     denominator line, not against this "of diagnosed" line.
+#   3rd (VLS): data/eswatini_ppdv.csv's VLS column is suppression among ALL
+#     PLHIV, not among those on ART (see analyzers.Cascade's own docstring on
+#     this exact distinction: conflating the two "double-counts the coverage
+#     ramp"). So this panel plots BOTH the "of those on ART" line (what was
+#     asked for) and a PLHIV-denominator line for a fair data overlay.
+#   eswatini_ppdv.csv's ART_prev column is explicitly flagged by
+#   ppdv_construction.py as "INDETERMINATE - do not use without checking" and
+#   is deliberately not used anywhere in this script.
+AGE_BINS = CascadeByAgeSex.AGE_BINS
+
+
+def cascade_agg(df, lo=15, hi=50):
+    """Per-seed, per-year cascade fractions summed over [lo,hi), long-form."""
+    bins = [(a, b) for a, b in AGE_BINS if a >= lo and b <= hi]
+    counts = {}
+    for sex in ("f", "m"):
+        for stem in ("n_infected", "n_diagnosed", "n_on_art", "n_effective_art"):
+            cols = [f"cascadeagesex.{stem}_{sex}_{a}_{b}" for a, b in bins]
+            counts[f"{stem}_{sex}"] = df[cols].sum(axis=1)
+    for stem in ("n_infected", "n_diagnosed", "n_on_art", "n_effective_art"):
+        counts[f"{stem}_all"] = counts[f"{stem}_f"] + counts[f"{stem}_m"]
+
+    rows = []
+    for sex in ("f", "m", "all"):
+        def c(stem, sex=sex):
+            return counts[f"{stem}_{sex}"]
+        rows.append(pd.DataFrame({
+            "year": df["timevec"], "seed": df["seed"], "sex": sex,
+            "p_dx": c("n_diagnosed") / c("n_infected").replace(0, np.nan),
+            "p_art_dx": c("n_on_art") / c("n_diagnosed").replace(0, np.nan),
+            "p_art_plhiv": c("n_on_art") / c("n_infected").replace(0, np.nan),
+            "p_vls_art": c("n_effective_art") / c("n_on_art").replace(0, np.nan),
+            "p_vls_plhiv": c("n_effective_art") / c("n_infected").replace(0, np.nan),
+        }))
+    return pd.concat(rows, ignore_index=True)
+
+
+casc = cascade_agg(df)
+CASC_COLORS = {"f": "#c0392b", "m": "#2c6fbb", "all": "#444444"}
+CASC_NAMES = {"f": "Women", "m": "Men", "all": "Both sexes"}
+
+
+def _band(ax, g, col, color, label, ls="-", lw=2):
+    s = g.groupby("year")[col]
+    mean, sd = s.mean(), s.std(ddof=1).fillna(0.0)
+    ax.plot(mean.index, mean.values * 100, color=color, lw=lw, ls=ls, label=label)
+    if ls == "-":
+        ax.fill_between(mean.index, ((mean - sd).clip(lower=0) * 100).values,
+                        ((mean + sd).clip(upper=1) * 100).values,
+                        color=color, alpha=0.15, lw=0)
+
+
+fig, axes = plt.subplots(1, 3, figsize=(16, 4.6))
+
+ax = axes[0]
+for sex in ("f", "m", "all"):
+    _band(ax, casc[casc.sex == sex], "p_dx", CASC_COLORS[sex], CASC_NAMES[sex])
+ax.set_title("% of PLHIV diagnosed\n(no survey target exists in this project's data)",
+             fontsize=9.5)
+ax.set_ylabel("%")
+
+ax = axes[1]
+for sex in ("f", "m", "all"):
+    _band(ax, casc[casc.sex == sex], "p_art_dx", CASC_COLORS[sex], CASC_NAMES[sex])
+ax.set_title("% of diagnosed on ART\n(data uses a different denominator -- "
+            "see age-stratified figure)", fontsize=9.5)
+
+ax = axes[2]
+for sex in ("f", "m"):
+    _band(ax, casc[casc.sex == sex], "p_vls_art", CASC_COLORS[sex],
+         f"{CASC_NAMES[sex]} — of those on ART")
+    _band(ax, casc[casc.sex == sex], "p_vls_plhiv", CASC_COLORS[sex],
+         f"{CASC_NAMES[sex]} — of all PLHIV (matches data)", ls="--", lw=1.4)
+ppdv = pd.read_csv(REPO / "data" / "eswatini_ppdv.csv")
+for _, r in ppdv.iterrows():
+    yerr = ([[(r.VLS - r.VLS_lb) * 100], [(r.VLS_ub - r.VLS) * 100]]
+           if pd.notna(r.VLS_lb) else None)
+    ax.errorbar(r.Year, r.VLS * 100, yerr=yerr, fmt="o", mfc=CASC_COLORS[r.sex],
+                mec="black", mew=1.2, ms=8, ecolor="black", capsize=4, zorder=6)
+    ax.annotate(r.AgeCat, (r.Year, r.VLS * 100), textcoords="offset points",
+               xytext=(5, 5), fontsize=6.5, color="grey")
+ax.errorbar([], [], fmt="o", mfc="grey", mec="black", ms=8, capsize=4,
+           label="SHIMS/PHIA VLS among all PLHIV\n(label = survey's own age range)")
+ax.set_title("% virally suppressed", fontsize=9.5)
+
+for ax in axes:
+    ax.set_xlabel("year"); ax.set_xlim(2000, STOP); ax.set_ylim(0, 105)
+    ax.grid(alpha=0.3); ax.legend(fontsize=7)
+fig.suptitle("90-90-90 cascade over time, ages 15-49 (DTC_check, 024 row 868)\n"
+            "line = mean of 10 seeds, band = +/- 1 SD (diagnosed/on-ART only)",
+            y=1.06, fontsize=11)
+fig_casc_ts = OUT / "cascade_timeseries_dtc_check.png"
+fig.savefig(fig_casc_ts, dpi=130, bbox_inches="tight")
+plt.close(fig)
+print(f"Saved 90-90-90 time-series figure to {fig_casc_ts}")
+
+# %% 90-90-90 cascade by age, for the three PHIA survey years
+# Rows = cascade stage, columns = year, colour = sex. The "on ART" row
+# overlays calibration_data/art_coverage_by_age_sex.csv (3 age bins:
+# [15,25), [25,35), [35,45) -- it has no bins outside that range) against the
+# model's OWN of-ALL-PLHIV line (dashed), the same denominator that file
+# uses -- not the solid "of diagnosed" line, which would silently compare two
+# different quantities in the same colour. No age-stratified diagnosed or VLS
+# data exists in this project, so those rows are model-only.
+YEARS = (2011, 2016, 2021)
+
+
+def cascade_by_age(df, year):
+    """Mean-over-seeds cascade fraction per stage, sex, and 5-year age band."""
+    g = df[np.floor(df.timevec) == year]
+    rows = []
+    for sex in ("f", "m"):
+        for lo, hi in AGE_BINS:
+            inf = g[f"cascadeagesex.n_infected_{sex}_{lo}_{hi}"]
+            dx = g[f"cascadeagesex.n_diagnosed_{sex}_{lo}_{hi}"]
+            art = g[f"cascadeagesex.n_on_art_{sex}_{lo}_{hi}"]
+            eff = g[f"cascadeagesex.n_effective_art_{sex}_{lo}_{hi}"]
+            rows.append(dict(
+                sex=sex, age_low=lo,
+                p_dx=(dx / inf.replace(0, np.nan)).mean(),
+                p_art_dx=(art / dx.replace(0, np.nan)).mean(),
+                p_art_plhiv=(art / inf.replace(0, np.nan)).mean(),
+                p_vls_art=(eff / art.replace(0, np.nan)).mean()))
+    return pd.DataFrame(rows)
+
+
+art_data = pd.read_csv(REPO / "calibration_data" / "art_coverage_by_age_sex.csv")
+# 0=Male, 1=Female -- confirmed against plot_art_by_age_sex.py's own mapping
+# for this exact file, not assumed (this project has two sex-coding
+# conventions across different files; see experiments/021.../config.yaml).
+art_data["sex"] = art_data.Gender.map({0: "m", 1: "f"})
+
+STAGE_COLS = [("p_dx", "% diagnosed\n(of PLHIV)"),
+             ("p_art_dx", "% on ART\n(of diagnosed)"),
+             ("p_vls_art", "% suppressed\n(of on ART)")]
+
+fig, axes = plt.subplots(3, len(YEARS), figsize=(5.2 * len(YEARS), 12), sharex=True)
+for row, (col, title) in enumerate(STAGE_COLS):
+    for j, year in enumerate(YEARS):
+        ax = axes[row, j]
+        cba = cascade_by_age(df, year)
+        for sex in ("f", "m"):
+            s = cba[cba.sex == sex].sort_values("age_low")
+            ax.plot(s.age_low + 2.5, s[col] * 100, "-o", color=CASC_COLORS[sex],
+                    ms=3, label=CASC_NAMES[sex])
+        if col == "p_art_dx":
+            for sex in ("f", "m"):
+                s2 = cba[cba.sex == sex].sort_values("age_low")
+                ax.plot(s2.age_low + 2.5, s2.p_art_plhiv * 100, "--",
+                        color=CASC_COLORS[sex], lw=1.2, alpha=0.7,
+                        label=f"{CASC_NAMES[sex]} (of ALL PLHIV, matches data)")
+            for _, r in art_data[art_data.Year == year].iterrows():
+                lo, hi = (int(x) for x in r.AgeBin.strip("[)").split(","))
+                ax.errorbar((lo + hi) / 2, r.NationalARTPrevalence * 100,
+                            yerr=[[(r.NationalARTPrevalence - r.lb) * 100],
+                                 [(r.ub - r.NationalARTPrevalence) * 100]],
+                            fmt="s", mfc=CASC_COLORS[r.sex], mec="black", mew=1.2,
+                            ms=7, ecolor="black", capsize=3, zorder=6)
+        if row == 0:
+            ax.set_title(f"{year}", fontsize=11)
+        if j == 0:
+            ax.set_ylabel(title, fontsize=9.5)
+        ax.set_ylim(0, 105); ax.set_xlim(13, 65); ax.grid(alpha=0.3)
+        if row == 2:
+            ax.set_xlabel("age")
+        if row == 0 and j == 0:
+            ax.legend(fontsize=6.5)
+fig.suptitle("90-90-90 cascade by age, DTC_check (024 row 868)\n"
+            "squares = PHIA ART-coverage data; dashed model line matches its "
+            "denominator (ALL PLHIV, not diagnosed)", y=1.01, fontsize=11)
+fig_casc_age = OUT / "cascade_by_age_dtc_check.png"
+fig.savefig(fig_casc_age, dpi=130, bbox_inches="tight")
+plt.close(fig)
+print(f"Saved 90-90-90 by-age figure to {fig_casc_age}")
+
+# %%

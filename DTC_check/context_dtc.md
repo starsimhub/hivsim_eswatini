@@ -33,3 +33,10 @@ Some additions, for amending the output from above:
   * Need to see plots of incidence
     * all ages men and women over time
     * age-incidence curves for men and women for both
+
+### Fixes
+
+I have added several new datasets describing ART coverage - the first is SHIMS_909090_coverage.csv - this describes all three 90 90 90 metrics - the % of PLHIV who know their status, the % of people who know their status who are on ART, and the % of people who are on ART and have achieved VLS. 
+The second is aware_and_art_no_interactions_modeled.csv - this only has the first two of the 90 90 90 metrics.
+
+What I need is to be able to compare the results from the current calibrated SWZ model against each of these datasets. 90 90 90 numbers broken down by age and sex, and also for adults 15-49 and 15+. In addition to the cascade timeseries and cascade by age checks, I want two more checks for each time series and by age which compare against these two datasets.

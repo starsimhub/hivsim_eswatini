@@ -11,6 +11,9 @@ What this does
 3. Save the results
 4. Plot age-stratified HIV prevalence against PHIA, using the repo's one
    shared implementation of that figure (standard_figures.py)
+5. Plot incidence and the 90-90-90 cascade, the latter also against the
+   SHIMS and Kasturi datasets in ART_Coverage_Datasets/ (checks A-D), and
+   write the model-vs-data cascade numbers to cascade_vs_data_dtc_check.csv
 
 Which "calibrated model"?
 --------------------------
@@ -228,26 +231,16 @@ print("Scorecard incl. 2021 (those strata were NOT fitted -- read as out-of-samp
 for k, v in scorecard_2021.items():
     print(f"  {k}: {v}")
 
-# %% Incidence: time series + age profile, vs SHIMS
-# Both are standard_figures.py's existing shared implementation -- nothing new
-# to write, same reuse logic as the prevalence figure above.
-# plot_incidence_fit: 15-49 time series by sex, plus the 2016 age-band
-# comparison (the only year SHIMS publishes bands for).
-# plot_incidence_age_profile: the model's own full 5-year-band age profile for
-# 2011 and 2016. Both carry CLAUDE.md's false-recency-bias caveat ON THE
-# FIGURE ITSELF, not just in a comment: the published age-banded incidence is
-# NOT a fitting target (assay false-recency bias inflates older age bands --
-# see CLAUDE.md's `incidence_construction.py` note), and 2011 has no
-# age-banded data at all (SHIMS1 published only an 18-49 aggregate), which the
-# 2011 panel states directly.
+# %% Incidence: time series + 2016 age bands, vs the calibration targets
+# standard_figures.py's existing shared implementation -- same reuse logic as
+# the prevalence figure above. 15-49 time series by sex against the fitted
+# targets (SHIMS1 2011 18-49 cohort estimate, SHIMS2 2016 15-49), plus the
+# 2016 age-band comparison, which carries CLAUDE.md's false-recency-bias
+# caveat on the figure itself. The comparison against the SHIMS2/SHIMS3
+# incidence file in ART_Coverage_Datasets/ is further down (incidence checks).
 fig_inc_fit = OUT / "incidence_fit_dtc_check.png"
 sf.plot_incidence_fit(df, label="DTC_check (024 row 868)", outpath=fig_inc_fit)
 print(f"Saved incidence time-series + 2016 age-band figure to {fig_inc_fit}")
-
-fig_inc_age = OUT / "incidence_age_profile_dtc_check.png"
-sf.plot_incidence_age_profile(df, label="DTC_check (024 row 868)",
-                              outpath=fig_inc_age, years=(2011, 2016))
-print(f"Saved full age-resolution incidence profile to {fig_inc_age}")
 
 # %% 90-90-90 cascade over time (15-49), by sex
 # Three stages, each CONDITIONAL on the previous stage (the standard UNAIDS
@@ -258,9 +251,9 @@ print(f"Saved full age-resolution incidence profile to {fig_inc_age}")
 #
 # Data availability -- checked against every file in calibration_data/ and
 # external_data/ before writing this, not assumed:
-#   1st (diagnosed): no target of ANY kind exists anywhere in this project.
-#     Model-only; the figure says so rather than silently omitting a data
-#     series a reader might assume just wasn't plotted.
+#   1st (diagnosed): no target exists in calibration_data/ or external_data/.
+#     Model-only here; compared against DTC_check/ART_Coverage_Datasets/
+#     (SHIMS 2021 + Kasturi's estimates) in checks A-D further down.
 #   2nd (on ART): calibration_data/art_coverage_by_age_sex.csv exists, but its
 #     denominator is ALL PLHIV (it's what sti.ART's `coverage` input targets --
 #     see interventions.py), not diagnosed. That's a DIFFERENT quantity from
@@ -324,7 +317,7 @@ fig, axes = plt.subplots(1, 3, figsize=(16, 4.6))
 ax = axes[0]
 for sex in ("f", "m", "all"):
     _band(ax, casc[casc.sex == sex], "p_dx", CASC_COLORS[sex], CASC_NAMES[sex])
-ax.set_title("% of PLHIV diagnosed\n(no survey target exists in this project's data)",
+ax.set_title("% of PLHIV diagnosed\n(data comparisons: see *_vs_shims / *_vs_kasturi figures)",
              fontsize=9.5)
 ax.set_ylabel("%")
 
@@ -441,5 +434,448 @@ fig_casc_age = OUT / "cascade_by_age_dtc_check.png"
 fig.savefig(fig_casc_age, dpi=130, bbox_inches="tight")
 plt.close(fig)
 print(f"Saved 90-90-90 by-age figure to {fig_casc_age}")
+
+# %% Load the two external 90-90-90 datasets (DTC_check/ART_Coverage_Datasets/)
+# Both are local to DTC_check, not calibration_data/ -- they are comparison
+# data for this check, NOT fitting targets (CLAUDE.md excludes ART coverage).
+#
+# SHIMS_909090_coverage.csv -- all three stages, each CONDITIONAL on the
+#   previous one (Diagnosed = of PLHIV; Diagnosed_OnART = of diagnosed;
+#   OnART_VLS = of on ART), so it maps 1:1 onto p_dx / p_art_dx / p_vls_art.
+#   `Number` is the stage's own denominator (it shrinks stage to stage).
+#   Two survey rounds: SHIMS3 (2021) and SHIMS2 (labelled 2017 in the file;
+#   fieldwork 2016-17 -- note the prevalence targets file this round as 2016).
+#   CIs below are Wilson 95% on the unweighted `Number`, which ignores the
+#   survey design effect, so they are narrower than the published CIs.
+# aware_and_art_no_interactions_modeled... (Kasturi) -- modelled smooth
+#   estimates, 1995-2021, by sex and 5-year band (15-19 .. 80-84), first two
+#   stages only. art_extrapolated is ON ART AMONG AWARE, not among PLHIV:
+#   it exceeds aware_extrapolated in ~half the rows, which is only possible
+#   for the conditional quantity. No CIs are provided.
+DATA_DIR = Path(__file__).resolve().parent / "ART_Coverage_Datasets"
+STAGE_OF_METRIC = {"Diagnosed": "p_dx", "Diagnosed_OnART": "p_art_dx",
+                   "OnART_VLS": "p_vls_art"}
+STAGE_TITLES = {"p_dx": "% diagnosed (of PLHIV)",
+                "p_art_dx": "% on ART (of diagnosed)",
+                "p_vls_art": "% suppressed (of on ART)"}
+SEX_OF_GENDER = {"female": "f", "male": "m"}  # matched lower-cased
+
+
+def parse_age_group(s):
+    """'15-24' -> (15, 25); '50+' -> (50, 100). Upper bound is exclusive."""
+    if s.endswith("+"):
+        return int(s[:-1]), 100
+    lo, hi = s.split("-")
+    return int(lo), int(hi) + 1
+
+
+def wilson(p, n, z=1.96):
+    """Wilson score interval for a proportion p observed on n trials."""
+    centre = (p + z**2 / (2 * n)) / (1 + z**2 / n)
+    half = z * np.sqrt(p * (1 - p) / n + z**2 / (4 * n**2)) / (1 + z**2 / n)
+    return centre - half, centre + half
+
+
+def load_shims(path):
+    """Read the SHIMS 90-90-90 file and add model-facing columns."""
+    s = pd.read_csv(path, encoding="utf-8-sig")
+    assert s.Year.notna().all(), "SHIMS rows with no year"
+    assert (s.Percentage.between(0, 100)).all(), "SHIMS percentage out of range"
+    s["stage"] = s.Metric.map(STAGE_OF_METRIC)
+    s["sex"] = s.Gender.str.lower().map(SEX_OF_GENDER)
+    assert s[["stage", "sex"]].notna().all().all(), "unrecognised Metric/Gender"
+    assert not s.duplicated(["Year", "stage", "sex", "Age group"]).any()
+    s["p"] = s.Percentage / 100
+    s[["age_lo", "age_hi"]] = s["Age group"].apply(
+        lambda a: pd.Series(parse_age_group(a)))
+    s["lb"], s["ub"] = wilson(s.p, s.Number)
+    return s
+
+
+shims = load_shims(DATA_DIR / "SHIMS_909090_coverage.csv")
+SHIMS_YEARS = sorted(shims.Year.unique())
+print("SHIMS rows per survey year:", shims.Year.value_counts().sort_index().to_dict())
+
+kas = pd.read_csv(DATA_DIR / "aware_and_art_no_interactions_modeled_output_1995_2021-From_Kasturi.csv",
+                  index_col=0)
+kas["sex"] = kas.gender.str.lower().map(SEX_OF_GENDER)
+kas["age_low"] = kas.agecat.str.split("-").str[0].astype(int)
+kas = kas.rename(columns={"aware_extrapolated": "p_dx",
+                          "art_extrapolated": "p_art_dx"})
+
+# SHIMS's aggregate rows: (lo, hi) -> label. Used for both the time-series
+# (15-49, 15+) and the by-age figure (the four non-overlapping bands).
+AGG_GROUPS = {(15, 50): "15-49", (15, 100): "15+"}
+SHIMS_AGE_BANDS = [(15, 25), (25, 35), (35, 50), (50, 100)]
+
+
+def model_summary(df, lo, hi):
+    """Mean and SD over seeds of each cascade stage, ages [lo,hi), by year+sex.
+
+    Per-seed ratio-of-sums (cascade_agg), then summarised across seeds --
+    the same order of operations as the cascade time-series figure above.
+    """
+    c = cascade_agg(df, lo, hi)
+    stages = ["p_dx", "p_art_dx", "p_vls_art"]
+    g = c.groupby(["year", "sex"])[stages]
+    return g.mean().join(g.std(ddof=1), rsuffix="_sd").reset_index()
+
+
+# %% Kasturi's 5-year bands -> 15-49 and 15+ aggregates
+# Kasturi's file has fractions only, no population sizes, so aggregating
+# needs weights from somewhere. We use the MODEL's own PLHIV per band
+# (mean over seeds) to turn fractions into implied counts:
+#   dx_b  = aware_b * PLHIV_b          art_b = art_b|aware * dx_b
+#   p_dx  = sum(dx_b) / sum(PLHIV_b)   p_art_dx = sum(art_b) / sum(dx_b)
+# So the aggregate data line inherits the model's age/sex distribution of
+# PLHIV. If the model's PLHIV age structure is off, this line moves with it --
+# the 5-year-band figure further down is the comparison free of that.
+# Kasturi stops at 80-84, so its "15+" is 15-84; the model's 15+ is 15-99.
+def kasturi_aggregate(kas, df, lo, hi):
+    plhiv = []
+    for sex in ("f", "m"):
+        for a, b in AGE_BINS:
+            if a >= lo and b <= hi:
+                col = f"cascadeagesex.n_infected_{sex}_{a}_{b}"
+                m = df.groupby("timevec")[col].mean()
+                plhiv.append(pd.DataFrame({"year": m.index.astype(int), "sex": sex,
+                                           "age_low": a, "plhiv": m.values}))
+    k = kas.merge(pd.concat(plhiv), on=["year", "sex", "age_low"], how="inner")
+    k["dx"] = k.p_dx * k.plhiv
+    k["art"] = k.p_art_dx * k.dx
+    both = k.assign(sex="all")
+    s = pd.concat([k, both]).groupby(["year", "sex"])[["plhiv", "dx", "art"]].sum()
+    return pd.DataFrame({"p_dx": s.dx / s.plhiv,
+                         "p_art_dx": s.art / s.dx}).reset_index()
+
+
+kas_agg = {grp: kasturi_aggregate(kas, df, lo, hi) for (lo, hi), grp in AGG_GROUPS.items()}
+mod_agg = {grp: model_summary(df, lo, hi) for (lo, hi), grp in AGG_GROUPS.items()}
+
+# %% Check A: 90-90-90 time series vs SHIMS (15-49 and 15+)
+# Rows = age group, columns = stage. One point per sex per survey round.
+# SHIMS publishes no both-sexes row; the grey model line has no data to
+# compare against.
+fig, axes = plt.subplots(2, 3, figsize=(16, 9), sharex=True)
+for i, grp in enumerate(AGG_GROUPS.values()):
+    for j, stage in enumerate(STAGE_TITLES):
+        ax = axes[i, j]
+        lo, hi = {v: k for k, v in AGG_GROUPS.items()}[grp]
+        c = cascade_agg(df, lo, hi)
+        for sex in ("f", "m", "all"):
+            _band(ax, c[c.sex == sex], stage, CASC_COLORS[sex], CASC_NAMES[sex])
+        d = shims[(shims.stage == stage) & (shims["Age group"] == grp)]
+        for _, r in d.iterrows():
+            ax.errorbar(r.Year, r.p * 100,
+                        yerr=[[(r.p - r.lb) * 100], [(r.ub - r.p) * 100]],
+                        fmt="o", mfc=CASC_COLORS[r.sex],
+                        mec="black", mew=1.2,
+                        ms=8, ecolor="black", capsize=4, zorder=6)
+        ax.set_title(f"Ages {grp}: {STAGE_TITLES[stage]}", fontsize=10)
+        if j == 0:
+            ax.set_ylabel("%")
+        ax.set_xlim(2000, STOP); ax.set_ylim(0, 105); ax.grid(alpha=0.3)
+        if i == 1:
+            ax.set_xlabel("year")
+axes[0, 0].errorbar([], [], fmt="o", mfc="grey", mec="black", ms=8, capsize=4,
+                    label="SHIMS (Wilson 95% CI, unweighted n)")
+axes[0, 0].legend(fontsize=7)
+fig.suptitle("90-90-90 time series vs SHIMS, ages 15-49 (top row) and 15+ "
+             "(bottom row), DTC_check (024 row 868)\n"
+             "line = mean of 10 seeds, band = +/- 1 SD", y=1.01, fontsize=11)
+fig_path = OUT / "cascade_timeseries_vs_shims_dtc_check.png"
+fig.savefig(fig_path, dpi=130, bbox_inches="tight")
+plt.close(fig)
+print(f"Saved 90-90-90 time series vs SHIMS to {fig_path}")
+
+# %% Check B: 90-90-90 by SHIMS age band, one column per (sex, survey round)
+# Rows = cascade stage, columns = sex x survey year (women first, then men),
+# so each panel holds a single sex and the two sexes never share a facet.
+# The x-axis is CATEGORICAL: SHIMS's own bands (15-24, 25-34, 35-49, 50+),
+# with the model's 5-year bands summed into exactly those bands before taking
+# ratios (model_summary), so model and data describe the same people.
+# Model (open circle, +/- 1 SD over seeds) and SHIMS (filled square, Wilson
+# 95% CI) are drawn at the SAME x -- the category's own tick, no offset.
+# SHIMS 2017 has no 50+ row, so that category shows the model only.
+BAND_LABELS = [f"{lo}-{hi - 1}" if hi < 100 else f"{lo}+" for lo, hi in SHIMS_AGE_BANDS]
+mod_bands = {band: model_summary(df, *band) for band in SHIMS_AGE_BANDS}
+COLS = [(sex, year) for sex in ("f", "m") for year in SHIMS_YEARS]
+
+fig, axes = plt.subplots(len(STAGE_TITLES), len(COLS),
+                         figsize=(4.2 * len(COLS), 11), sharex=True, sharey=True)
+for j, (sex, year) in enumerate(COLS):
+    for i, stage in enumerate(STAGE_TITLES):
+        ax = axes[i, j]
+        for x, ((lo, hi), m) in enumerate(mod_bands.items()):
+            r = m[(m.year == year) & (m.sex == sex)].iloc[0]
+            ax.errorbar(x, r[stage] * 100,
+                        yerr=r[f"{stage}_sd"] * 100, fmt="o", mfc="white",
+                        mec=CASC_COLORS[sex], ecolor=CASC_COLORS[sex], mew=1.5,
+                        ms=8, capsize=3, zorder=5)
+            d = shims[(shims.Year == year) & (shims.stage == stage)
+                      & (shims.sex == sex) & (shims.age_lo == lo)
+                      & (shims.age_hi == hi)]
+            for _, d in d.iterrows():
+                ax.errorbar(x, d.p * 100,
+                            yerr=[[(d.p - d.lb) * 100], [(d.ub - d.p) * 100]],
+                            fmt="s", mfc=CASC_COLORS[sex], mec="black", mew=1.2,
+                            ms=7, ecolor="black", capsize=3, zorder=6)
+        if i == 0:
+            ax.set_title(f"{CASC_NAMES[sex]}, {year}", fontsize=11)
+        if j == 0:
+            ax.set_ylabel(STAGE_TITLES[stage], fontsize=9.5)
+        if i == len(STAGE_TITLES) - 1:
+            ax.set_xlabel("age group")
+        ax.set_xticks(range(len(BAND_LABELS)), BAND_LABELS)
+        # Zoomed y-axis: SHIMS strata run ~55-100% (lowest CI ~42%),
+        # unreadable on 0-105.
+        ax.set_xlim(-0.5, len(BAND_LABELS) - 0.5); ax.set_ylim(40, 102)
+        ax.grid(alpha=0.3, axis="y")
+ax = axes[0, 0]
+ax.plot([], [], "o", mfc="white", mec="grey", mew=1.5, label="model (+/- 1 SD)")
+ax.plot([], [], "s", mfc="grey", mec="black", label="SHIMS (Wilson 95% CI)")
+ax.legend(fontsize=7, loc="lower right")
+fig.suptitle("90-90-90 by age group vs SHIMS, DTC_check (024 row 868)",
+             y=1.01, fontsize=11)
+fig_path = OUT / "cascade_by_age_vs_shims_dtc_check.png"
+fig.savefig(fig_path, dpi=130, bbox_inches="tight")
+plt.close(fig)
+print(f"Saved 90-90-90 by age vs SHIMS to {fig_path}")
+
+# %% Check C: 90-90-90 time series vs Kasturi, by age group and sex
+# Rows = cascade stage, columns = age group x sex (one sex per panel).
+# Kasturi covers only the first two stages; the VLS row is model-only, shown
+# so all three 90s can be read off one figure. Kasturi's aggregate line
+# depends on model PLHIV weights -- see kasturi_aggregate's comment.
+# Dashed = Kasturi, solid + band = model.
+STAGES_C = list(STAGE_TITLES)
+COLS = [(grp, sex) for grp in AGG_GROUPS.values() for sex in ("f", "m")]
+GRP_BOUNDS = {grp: lohi for lohi, grp in AGG_GROUPS.items()}
+fig, axes = plt.subplots(len(STAGES_C), len(COLS), figsize=(4.2 * len(COLS), 11),
+                         sharex=True, sharey=True)
+for j, (grp, sex) in enumerate(COLS):
+    c = cascade_agg(df, *GRP_BOUNDS[grp])
+    k = kas_agg[grp][kas_agg[grp].sex == sex]
+    for i, stage in enumerate(STAGES_C):
+        ax = axes[i, j]
+        _band(ax, c[c.sex == sex], stage, CASC_COLORS[sex], "model")
+        if stage in k:
+            ax.plot(k.year, k[stage] * 100, "--o", color=CASC_COLORS[sex],
+                    ms=3, lw=1.3, label="Kasturi")
+        else:
+            ax.text(0.97, 0.05, "no Kasturi estimate", transform=ax.transAxes,
+                    ha="right", fontsize=8, color="grey")
+        if i == 0:
+            ax.set_title(f"{CASC_NAMES[sex]}, ages {grp}", fontsize=11)
+        if j == 0:
+            ax.set_ylabel(STAGE_TITLES[stage], fontsize=9.5)
+        if i == len(STAGES_C) - 1:
+            ax.set_xlabel("year")
+        ax.set_xlim(1995, STOP); ax.set_ylim(0, 105); ax.grid(alpha=0.3)
+        if i == 0:
+            ax.legend(fontsize=7, loc="lower right")
+fig.suptitle("90-90-90 time series vs Kasturi's modelled estimates, DTC_check (024 row 868)\n"
+             "Kasturi 5-year bands aggregated with MODEL PLHIV weights; "
+             "Kasturi '15+' = 15-84", y=1.02, fontsize=11)
+fig_path = OUT / "cascade_timeseries_vs_kasturi_dtc_check.png"
+fig.savefig(fig_path, dpi=130, bbox_inches="tight")
+plt.close(fig)
+print(f"Saved 90-90-90 time series vs Kasturi to {fig_path}")
+
+# %% Check D: first two 90s by 5-year age band vs Kasturi
+# Same 5-year bands on both sides, so no weighting assumption here.
+# Model = mean over seeds of per-seed ratios (cascade_by_age, as above).
+fig, axes = plt.subplots(2, len(YEARS), figsize=(5.2 * len(YEARS), 8.5),
+                         sharex=True, sharey=True)
+for j, year in enumerate(YEARS):
+    cba = cascade_by_age(df, year)
+    for i, stage in enumerate(("p_dx", "p_art_dx")):
+        ax = axes[i, j]
+        for sex in ("f", "m"):
+            s = cba[(cba.sex == sex) & (cba.age_low >= 15) & (cba.age_low < 85)]
+            ax.plot(s.age_low + 2.5, s[stage] * 100, "-o", color=CASC_COLORS[sex],
+                    ms=3, label=f"{CASC_NAMES[sex]} model")
+            k = kas[(kas.year == year) & (kas.sex == sex)].sort_values("age_low")
+            ax.plot(k.age_low + 2.5, k[stage] * 100, "--s", color=CASC_COLORS[sex],
+                    ms=4, mfc="white", lw=1.3, label=f"{CASC_NAMES[sex]} Kasturi")
+        if i == 0:
+            ax.set_title(f"{year}", fontsize=11)
+        if j == 0:
+            ax.set_ylabel(f"{STAGE_TITLES[stage]}")
+        if i == 1:
+            ax.set_xlabel("age")
+        ax.set_xlim(13, 87); ax.set_ylim(0, 105); ax.grid(alpha=0.3)
+axes[0, 0].legend(fontsize=7)
+fig.suptitle("First two 90s by age vs Kasturi's modelled estimates, "
+             "DTC_check (024 row 868)", y=1.01, fontsize=11)
+fig_path = OUT / "cascade_by_age_vs_kasturi_dtc_check.png"
+fig.savefig(fig_path, dpi=130, bbox_inches="tight")
+plt.close(fig)
+print(f"Saved first-two-90s by age vs Kasturi to {fig_path}")
+
+# %% Load SHIMS incidence (DTC_check/ART_Coverage_Datasets/SHIMS_incidence_data.csv)
+# Published annual incidence, % per year, with 95% CIs, by sex (Male, Female,
+# and "total" = both sexes) and age group, for SHIMS2 (labelled 2017 in the
+# file, as in the 90-90-90 file) and SHIMS3 (2021). Comparison only -- not a
+# fitting target; the 2021 rows are CLAUDE.md's validation hold-out year.
+# Same caveat as the calibration targets: recency-assay false-recency bias
+# inflates older age bands (see incidence_construction.py).
+SEX_OF_GENDER_INC = {**SEX_OF_GENDER, "total": "all"}
+shims_inc = pd.read_csv(DATA_DIR / "SHIMS_incidence_data.csv", encoding="utf-8-sig")
+shims_inc["sex"] = shims_inc.Gender.str.lower().map(SEX_OF_GENDER_INC)
+assert shims_inc.sex.notna().all(), "unrecognised Gender in SHIMS incidence"
+shims_inc[["age_lo", "age_hi"]] = shims_inc["Age group"].apply(
+    lambda a: pd.Series(parse_age_group(a)))
+shims_inc = shims_inc.rename(columns={"Percentage annual incidence": "inc",
+                                      "CI_lower": "lb", "CI_upper": "ub"})
+SHIMS_INC_YEARS = sorted(shims_inc.Year.unique())
+
+
+def model_incidence(df, sex, lo, hi):
+    """Per-seed annual incidence % over ages [lo,hi), long-form (year, seed, inc).
+
+    Same definition as standard_figures._inc_series -- new infections over
+    SUSCEPTIBLES (alive minus infected), from PopByAgeSex's 5-year bands --
+    extended to sex="all" by summing both sexes' counts before the ratio.
+    The STOP year is dropped: the sim ends on its first timestep, so its
+    new-infection count covers a fraction of a year and reads as ~0.
+    """
+    sexes = ("f", "m") if sex == "all" else (sex,)
+    new = alv = inf = 0
+    for s in sexes:
+        for a, b in AGE_BINS:
+            if a >= lo and b <= hi:
+                new = new + df[f"popagesex.new_infections_{s}_{a}_{b}"]
+                alv = alv + df[f"popagesex.n_alive_{s}_{a}_{b}"]
+                inf = inf + df[f"popagesex.n_infected_{s}_{a}_{b}"]
+    susc = alv - inf
+    out = pd.DataFrame({"year": df.timevec.astype(int), "seed": df.seed,
+                        "inc": 100.0 * new / susc.where(susc > 0)})
+    return out[out.year < STOP]
+
+
+def model_incidence_at(df, sex, lo, hi, year):
+    """(mean, SD) over seeds of incidence % in one year."""
+    v = model_incidence(df, sex, lo, hi)
+    v = v[v.year == year].inc.dropna()
+    return v.mean(), v.std(ddof=1)
+
+
+# %% Incidence check 1: incidence by SHIMS age group vs SHIMS
+# Same layout as the 90-90-90 by-age check: one row, one column per
+# (sex, survey year), women first then men; categorical x-axis of SHIMS's own
+# age groups, with the model's 5-year bands summed into exactly those groups.
+# Model (open circle, +/- 1 SD over seeds) and SHIMS (filled square, 95% CI)
+# share the category's tick -- no offset. SHIMS2 has no 50+ row.
+COLS = [(sex, year) for sex in ("f", "m") for year in SHIMS_INC_YEARS]
+fig, axes = plt.subplots(1, len(COLS), figsize=(4.2 * len(COLS), 4.6),
+                         sharey=True)
+for ax, (sex, year) in zip(axes, COLS):
+    for x, (lo, hi) in enumerate(SHIMS_AGE_BANDS):
+        m, sd = model_incidence_at(df, sex, lo, hi, year)
+        ax.errorbar(x, m, yerr=sd, fmt="o", mfc="white", mec=CASC_COLORS[sex],
+                    ecolor=CASC_COLORS[sex], mew=1.5, ms=8, capsize=3, zorder=5)
+        d = shims_inc[(shims_inc.Year == year) & (shims_inc.sex == sex)
+                      & (shims_inc.age_lo == lo) & (shims_inc.age_hi == hi)]
+        for _, d in d.iterrows():
+            ax.errorbar(x, d.inc, yerr=[[d.inc - d.lb], [d.ub - d.inc]],
+                        fmt="s", mfc=CASC_COLORS[sex], mec="black", mew=1.2,
+                        ms=7, ecolor="black", capsize=3, zorder=6)
+    ax.set_title(f"{CASC_NAMES[sex]}, {year}", fontsize=11)
+    ax.set_xticks(range(len(BAND_LABELS)), BAND_LABELS)
+    ax.set_xlim(-0.5, len(BAND_LABELS) - 0.5); ax.set_ylim(bottom=0)
+    ax.set_xlabel("age group"); ax.grid(alpha=0.3, axis="y")
+axes[0].set_ylabel("HIV incidence (% per year)")
+axes[0].plot([], [], "o", mfc="white", mec="grey", mew=1.5, label="model (+/- 1 SD)")
+axes[0].plot([], [], "s", mfc="grey", mec="black", label="SHIMS (95% CI)")
+axes[0].legend(fontsize=7, loc="upper right")
+fig.suptitle("HIV incidence by age group vs SHIMS, DTC_check (024 row 868)",
+             y=1.03, fontsize=11)
+fig_path = OUT / "incidence_by_age_vs_shims_dtc_check.png"
+fig.savefig(fig_path, dpi=130, bbox_inches="tight")
+plt.close(fig)
+print(f"Saved incidence by age vs SHIMS to {fig_path}")
+
+# %% Incidence check 2: incidence time series vs SHIMS (15-49 and 15+)
+# Rows = age group, columns = women / men / both sexes (SHIMS's "total").
+# Unlike incidence_fit_dtc_check.png, which compares against the calibration
+# targets (SHIMS1 2011 18-49, SHIMS2 2016 15-49), this compares against the
+# SHIMS2/SHIMS3 file above. Line = mean of seeds, band = +/- 1 SD.
+inc_cols = ("f", "m", "all")
+fig, axes = plt.subplots(len(AGG_GROUPS), len(inc_cols),
+                         figsize=(5.2 * len(inc_cols), 8.5), sharex=True, sharey=True)
+for i, (lohi, grp) in enumerate(AGG_GROUPS.items()):
+    for j, sex in enumerate(inc_cols):
+        ax = axes[i, j]
+        s = model_incidence(df, sex, *lohi).groupby("year").inc
+        mean, sd = s.mean(), s.std(ddof=1).fillna(0.0)
+        ax.plot(mean.index, mean.values, color=CASC_COLORS[sex], lw=2)
+        ax.fill_between(mean.index, (mean - sd).clip(lower=0).values,
+                        (mean + sd).values, color=CASC_COLORS[sex], alpha=0.15, lw=0)
+        d = shims_inc[(shims_inc["Age group"] == grp) & (shims_inc.sex == sex)]
+        for _, r in d.iterrows():
+            ax.errorbar(r.Year, r.inc, yerr=[[r.inc - r.lb], [r.ub - r.inc]],
+                        fmt="s", mfc=CASC_COLORS[sex], mec="black", mew=1.2,
+                        ms=8, ecolor="black", capsize=4, zorder=6)
+        ax.set_title(f"{CASC_NAMES[sex]}, ages {grp}", fontsize=11)
+        ax.set_xlim(2000, STOP); ax.set_ylim(bottom=0); ax.grid(alpha=0.3)
+        if j == 0:
+            ax.set_ylabel("HIV incidence (% per year)")
+        if i == len(AGG_GROUPS) - 1:
+            ax.set_xlabel("year")
+axes[0, 0].plot([], [], "-", color="grey", lw=2, label="model (+/- 1 SD)")
+axes[0, 0].errorbar([], [], fmt="s", mfc="grey", mec="black", ms=8, capsize=4,
+                    label="SHIMS (95% CI)")
+axes[0, 0].legend(fontsize=7, loc="upper right")
+fig.suptitle("HIV incidence over time vs SHIMS, DTC_check (024 row 868)",
+             y=1.01, fontsize=11)
+fig_path = OUT / "incidence_timeseries_vs_shims_dtc_check.png"
+fig.savefig(fig_path, dpi=130, bbox_inches="tight")
+plt.close(fig)
+print(f"Saved incidence time series vs SHIMS to {fig_path}")
+
+# %% Numbers behind checks A-D and the SHIMS incidence checks, as one table
+# One row per (dataset, stage, year, sex, age group): data vs model mean/SD.
+# Incidence rows are in % per year; cascade rows are proportions.
+# This is the table to read when the figures are too compressed near 90-100%.
+rows = []
+for _, d in shims.iterrows():
+    m = model_summary(df, d.age_lo, d.age_hi)
+    r = m[(m.year == d.Year) & (m.sex == d.sex)].iloc[0]
+    rows.append(dict(dataset="SHIMS", stage=d.stage, year=d.Year, sex=d.sex,
+                     age_group=d["Age group"], data=d.p, data_lb=d.lb,
+                     data_ub=d.ub, data_n=d.Number,
+                     model=r[d.stage],
+                     model_sd=r[f"{d.stage}_sd"]))
+for grp in AGG_GROUPS.values():
+    k = kas_agg[grp].merge(mod_agg[grp], on=["year", "sex"], suffixes=("", "_mod"))
+    for stage in ("p_dx", "p_art_dx"):
+        for _, r in k.iterrows():
+            rows.append(dict(dataset="Kasturi (model-PLHIV-weighted)", stage=stage,
+                             year=r.year, sex=r.sex, age_group=grp, data=r[stage],
+                             model=r[f"{stage}_mod"], model_sd=r[f"{stage}_sd"]))
+for year in YEARS:
+    cba = cascade_by_age(df, year)
+    k = kas[kas.year == year].merge(cba, on=["sex", "age_low"], suffixes=("", "_mod"))
+    for stage in ("p_dx", "p_art_dx"):
+        for _, r in k.iterrows():
+            rows.append(dict(dataset="Kasturi", stage=stage, year=year, sex=r.sex,
+                             age_group=r.agecat, data=r[stage],
+                             model=r[f"{stage}_mod"]))
+for _, d in shims_inc.iterrows():
+    m, sd = model_incidence_at(df, d.sex, d.age_lo, d.age_hi, d.Year)
+    rows.append(dict(dataset="SHIMS incidence (% per year)", stage="incidence",
+                     year=d.Year, sex=d.sex, age_group=d["Age group"], data=d.inc,
+                     data_lb=d.lb, data_ub=d.ub, model=m, model_sd=sd))
+comparison = pd.DataFrame(rows)
+comparison["model_minus_data"] = comparison.model - comparison.data
+table_path = OUT / "cascade_vs_data_dtc_check.csv"
+comparison.to_csv(table_path, index=False, float_format="%.4f")
+print(f"Saved model-vs-data 90-90-90 table to {table_path}")
+with pd.option_context("display.float_format", "{:.3f}".format,
+                       "display.width", 160):
+    print(comparison[(comparison.dataset == "SHIMS")
+                     & comparison.age_group.isin(AGG_GROUPS.values())]
+          .drop(columns=["dataset"]).to_string(index=False))
 
 # %%

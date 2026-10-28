@@ -237,7 +237,7 @@ for k, v in scorecard_2021.items():
 # targets (SHIMS1 2011 18-49 cohort estimate, SHIMS2 2016 15-49), plus the
 # 2016 age-band comparison, which carries CLAUDE.md's false-recency-bias
 # caveat on the figure itself. The comparison against the SHIMS2/SHIMS3
-# incidence file in ART_Coverage_Datasets/ is further down (incidence checks).
+# incidence file in SHIMS_Datasets/ is further down (incidence checks).
 fig_inc_fit = OUT / "incidence_fit_dtc_check.png"
 sf.plot_incidence_fit(df, label="DTC_check (024 row 868)", outpath=fig_inc_fit)
 print(f"Saved incidence time-series + 2016 age-band figure to {fig_inc_fit}")
@@ -252,7 +252,7 @@ print(f"Saved incidence time-series + 2016 age-band figure to {fig_inc_fit}")
 # Data availability -- checked against every file in calibration_data/ and
 # external_data/ before writing this, not assumed:
 #   1st (diagnosed): no target exists in calibration_data/ or external_data/.
-#     Model-only here; compared against DTC_check/ART_Coverage_Datasets/
+#     Model-only here; compared against DTC_check/SHIMS_Datasets/
 #     (SHIMS 2021 + Kasturi's estimates) in checks A-D further down.
 #   2nd (on ART): calibration_data/art_coverage_by_age_sex.csv exists, but its
 #     denominator is ALL PLHIV (it's what sti.ART's `coverage` input targets --
@@ -435,7 +435,7 @@ fig.savefig(fig_casc_age, dpi=130, bbox_inches="tight")
 plt.close(fig)
 print(f"Saved 90-90-90 by-age figure to {fig_casc_age}")
 
-# %% Load the two external 90-90-90 datasets (DTC_check/ART_Coverage_Datasets/)
+# %% Load the two external 90-90-90 datasets (DTC_check/SHIMS_Datasets/)
 # Both are local to DTC_check, not calibration_data/ -- they are comparison
 # data for this check, NOT fitting targets (CLAUDE.md excludes ART coverage).
 #
@@ -452,7 +452,7 @@ print(f"Saved 90-90-90 by-age figure to {fig_casc_age}")
 #   stages only. art_extrapolated is ON ART AMONG AWARE, not among PLHIV:
 #   it exceeds aware_extrapolated in ~half the rows, which is only possible
 #   for the conditional quantity. No CIs are provided.
-DATA_DIR = Path(__file__).resolve().parent / "ART_Coverage_Datasets"
+DATA_DIR = Path(__file__).resolve().parent / "SHIMS_Datasets"
 STAGE_OF_METRIC = {"Diagnosed": "p_dx", "Diagnosed_OnART": "p_art_dx",
                    "OnART_VLS": "p_vls_art"}
 STAGE_TITLES = {"p_dx": "% diagnosed (of PLHIV)",
@@ -713,7 +713,7 @@ fig.savefig(fig_path, dpi=130, bbox_inches="tight")
 plt.close(fig)
 print(f"Saved first-two-90s by age vs Kasturi to {fig_path}")
 
-# %% Load SHIMS incidence (DTC_check/ART_Coverage_Datasets/SHIMS_incidence_data.csv)
+# %% Load SHIMS incidence (DTC_check/SHIMS_Datasets/SHIMS_incidence_data.csv)
 # Published annual incidence, % per year, with 95% CIs, by sex (Male, Female,
 # and "total" = both sexes) and age group, for SHIMS2 (labelled 2017 in the
 # file, as in the 90-90-90 file) and SHIMS3 (2021). Comparison only -- not a

@@ -34,9 +34,37 @@ Some additions, for amending the output from above:
     * all ages men and women over time
     * age-incidence curves for men and women for both
 
-### Fixes
+### Next iteration of calibration - 2026-10-28
 
-I have added several new datasets describing ART coverage - the first is SHIMS_909090_coverage.csv - this describes all three 90 90 90 metrics - the % of PLHIV who know their status, the % of people who know their status who are on ART, and the % of people who are on ART and have achieved VLS. 
-The second is aware_and_art_no_interactions_modeled.csv - this only has the first two of the 90 90 90 metrics.
+Goals:
+1. Prevalence among women is a little too high, especially for 20-40 year olds, for the three years of prevalence survey data.
+2. I would like to calibrate the model to match the 90 90 90 numbers from the SHIMS datasets.
+3. Overall improvements I would like to see
+   1. Prior to 2020 diagnosis rate is too high
+   2. Better matching to the 3 90s from SHIMS_909090_coverage.csv is a priority
+4. It is acceptable that the testing rates is fixed. What I want is the general population testing rates for both men and women to be fixed such that the right levels of people living with HIV know their status, and matches the calibration target data in SHIMS_909090_coverage.csv
+5. Add PrEP distribution data from spreadsheet SWZ_prep_coverage.csv
+   1. Oral PrEP
+      1. Annual distribution numbers sourced from PrEPWatch
+      2. Lasts 1 year, with 75% protective efficacy
+      3. <doi/full/10.1056/NEJMoa1108524>
+   2. LA-PrEP
+      1. sourced from speaking directly with MOH 
+      2. Lasts 1 year, with 92% protective efficacy
+   3. Prep distribution should target FSW, male clients of FSW, people with multiple partners, people who are unmarried, only target people who are not HIV positive
+   4. Annual prep distribution refers to total number of prep initiations in each year. People already on PrEP should not receive it a second time. Spread out the distribution across the year. There may be more or fewer people on PrEP at any given time than the annual PrEP distribution.
+6. Add to the list of output plots in build_and_check_calibration.py:
+   1. Intervention counts - the number of ART initiations, VMMC, PrEP initiations (of both types) each year. Four panels, all sharing same x axis. Points with no interpolating lines
 
-What I need is to be able to compare the results from the current calibrated SWZ model against each of these datasets. 90 90 90 numbers broken down by age and sex, and also for adults 15-49 and 15+. In addition to the cascade timeseries and cascade by age checks, I want two more checks for each time series and by age which compare against these two datasets.
+Other notes
+6. Antenatal testing should begin in 1995, and ramp up from 70% to 90% for mothers, with the midyear of the ramp being 2005. It may be that we should adjust this during calibration, as these numbers are left over from EMOD's calibration and might no longer apply here.
+7. 2021 SHIMS data on 90 90 90 numbers and prevalence should be held out for checking.
+8. SHIMS2 ran from 2016-2017, let's say all parameters from that time should be fit to early 2017 (ie, in the middle of that period)
+
+Work plan for re-calibrating:
+
+1. Add PrEP and the antenatal testing start date.
+2. With Adam's 7 calibrated parameters held fixed, tune the men's and women's testing rates until the % diagnosed matches SHIMS by sex, for ages 15–49 and 15+. This takes a few dozen runs on the laptop.
+3. Check that prevalence and incidence barely moved. They should, because ART coverage is forced either way.
+4. Re-run Adam's calibration (his second round plus the women 25–34 target), with the new testing rates and PrEP fixed in place. This needs the Azure VM.
+5. Check the 90s again under the new parameters. If they have drifted, repeat step 2 once.

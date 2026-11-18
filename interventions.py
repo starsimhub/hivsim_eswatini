@@ -10,9 +10,43 @@ import stisim as sti
 
 
 
-def get_testing_products():
+def anc_test_prob(years, start=1995, p_lo=0.70, p_hi=0.90, end=2015):
+    """Per-TIMESTEP ANC testing probability giving a per-PREGNANCY coverage ramp.
+
+    Exp 027: zero before `start`, then a linear ramp from `p_lo` of pregnant
+    women tested at `start` to `p_hi` at `end`, flat after. The defaults are
+    the researcher-specified starting point (DTC_check/context_dtc.md: 1995,
+    70% -> 90%, midpoint 2005), left over from the EMOD calibration; `start`,
+    `p_lo` and `end` are calibrated in exp 027 (calib_testing.py).
+
+    `anc_testing` runs with dt_scale=False on women in their first trimester,
+    which is 13 weeks, i.e. ~3 monthly timesteps. A per-step probability p
+    gives a per-pregnancy probability 1-(1-p)^3, so the coverage P is
+    converted as p = 1-(1-P)^(1/3). (The pre-027 value, 0.9 per step from the
+    sim start in 1985, meant ~99.9% of pregnant women were tested from 1985.)
+    """
+    years = np.asarray(years, dtype=float)
+    P = np.interp(years, [start, max(end, start + 1e-6)], [p_lo, p_hi])
+    P[years < start] = 0.0
+    return 1 - (1 - P) ** (1 / 3)
+
+
+def get_testing_products(testing_pars=None):
     """
     Define HIV products and testing interventions
+
+    testing_pars (dict, optional): exp 027's cascade inputs. None (default)
+    reproduces the testing used by experiments up to 026 exactly. Otherwise:
+        rel_test_m, rel_test_f: multipliers on the general-population testing
+            ramp for men and women, which is then split into two streams
+            (other_testing_m / other_testing_f). Tuned so % diagnosed matches
+            SHIMS2 by sex -- see experiments/027_cascade_prep_recal.
+        gp_start (optional, default 1990): year general-population testing
+            begins; it ramps linearly from 0 then to rel x 0.5 in 2020 and
+            rel x 0.6 in 2040 (the original ramp's 2020/2040 anchors).
+        anc (bool): use an ANC ramp (anc_test_prob) instead of a flat 0.9 per
+            step from the sim start. anc_start / anc_lo / anc_end (optional)
+            override anc_test_prob's defaults.
     """
 
     scaleup_years = np.arange(1990, 2021)  # Years for testing
@@ -38,13 +72,31 @@ def get_testing_products():
     def other_eligibility(sim):
         return ~sim.networks.structuredsexual.fsw & ~sim.diseases.hiv.diagnosed & ~sim.diseases.hiv.on_art
 
-    other_testing = sti.HIVTest(
-        years=years,
-        test_prob_data=gp_prob,
-        name='other_testing',
-        eligibility=other_eligibility,
-        label='other_testing',
-    )
+    if testing_pars is None:
+        gp_tests = [sti.HIVTest(
+            years=years,
+            test_prob_data=gp_prob,
+            name='other_testing',
+            eligibility=other_eligibility,
+            label='other_testing',
+        )]
+    else:
+        # Exp 027: the original ramp's 2020/2040 anchors, a calibrated start
+        # year (0 before it), scaled separately for men and women.
+        gp_start = testing_pars.get('gp_start', 1990)
+        gp_shape = np.interp(years, [gp_start, 2020, 2040], [0, 0.5, 0.6])
+        def male_elig(sim):
+            return other_eligibility(sim) & sim.people.male
+
+        def female_elig(sim):
+            return other_eligibility(sim) & sim.people.female
+
+        gp_tests = [
+            sti.HIVTest(years=years,
+                        test_prob_data=np.clip(gp_shape * testing_pars[f'rel_test_{s}'], 0, 1),
+                        name=f'other_testing_{s}', eligibility=elig,
+                        label=f'other_testing_{s}')
+            for s, elig in (('m', male_elig), ('f', female_elig))]
 
     # Agents whose CD4 count is below 200.
     def low_cd4_eligibility(sim):
@@ -64,15 +116,29 @@ def get_testing_products():
             ~sim.diseases.hiv.diagnosed[sim.demographics.pregnancy.tri1_uids]
         ]
 
-    anc_testing = sti.HIVTest(
-        test_prob_data=0.9,
-        dt_scale=False,
-        name='anc_testing',
-        eligibility=anc_eligibility,
-        label='anc_testing',
-    )
+    if testing_pars is not None and testing_pars.get('anc', False):
+        anc_years = np.arange(1985, 2041)
+        anc_testing = sti.HIVTest(
+            years=anc_years,
+            test_prob_data=anc_test_prob(
+                anc_years, **{arg: testing_pars[k] for k, arg in
+                              (('anc_start', 'start'), ('anc_lo', 'p_lo'), ('anc_end', 'end'))
+                              if k in testing_pars}),
+            dt_scale=False,
+            name='anc_testing',
+            eligibility=anc_eligibility,
+            label='anc_testing',
+        )
+    else:
+        anc_testing = sti.HIVTest(
+            test_prob_data=0.9,
+            dt_scale=False,
+            name='anc_testing',
+            eligibility=anc_eligibility,
+            label='anc_testing',
+        )
 
-    tests = [fsw_testing, other_testing, low_cd4_testing, anc_testing]
+    tests = [fsw_testing] + gp_tests + [low_cd4_testing, anc_testing]
 
     return tests
 
@@ -87,7 +153,11 @@ def _normalize_age_bin_format(df):
 
 
 def make_interventions(vmmc_class=None, art_vls_coverage='phia',
-                       vls_stock_target=True, art_coverage=None):
+                       vls_stock_target=True, art_coverage=None,
+                       testing_pars=None, prep=False, shims2_year=2016):
+    # testing_pars / prep: exp 027's cascade and PrEP inputs. Both default to
+    # off, so every earlier experiment is unchanged. See get_testing_products
+    # and prep_initiations.py.
     # Upstream sti.VMMC gained prevalence/stock-target semantics in stisim 1.5.9
     # -- the behaviour the in-repo VMMCPrevalenceTarget subclass existed to
     # supply. Exp 017 confirmed the two are behaviourally identical (circumcision
@@ -104,8 +174,17 @@ def make_interventions(vmmc_class=None, art_vls_coverage='phia',
     art_data = _normalize_age_bin_format(
         pd.read_csv('data/art_coverage.csv') if art_coverage is None
         else art_coverage)
+    # shims2_year: the year SHIMS2-derived inputs are pinned to. The ART and
+    # VLS tables label SHIMS2 (fieldwork 2016-17) as 2016; exp 027 compares
+    # the model to SHIMS2 at 2017.0, and with the 2016 label the forced ART
+    # coverage has already moved 1/5 of the way to the 2021 values by then,
+    # which inflated the second 90 by ~4 points. 2016 (default) leaves the
+    # inputs as 024-026 used them.
+    if shims2_year != 2016:
+        art_data = art_data.copy()
+        art_data.loc[art_data.Year == 2016, 'Year'] = shims2_year
     vmmc_data = _normalize_age_bin_format(pd.read_csv('data/vmmc_coverage.csv'))
-    tests = get_testing_products()
+    tests = get_testing_products(testing_pars)
 
     # art_vls_coverage: fraction of ART initiators achieving viral suppression.
     # Defaults to 'phia' -- the measured series from vls_construction.py (SHIMS2
@@ -129,6 +208,8 @@ def make_interventions(vmmc_class=None, art_vls_coverage='phia',
         # Early-ART-era suppression was plausibly worse, so this understates the
         # correction rather than overstating it. Recorded in 021's config.
         art_vls_coverage = to_vls_coverage(build(), fill_back_to=1985)
+        if shims2_year != 2016:
+            art_vls_coverage.loc[art_vls_coverage.Year == 2016, 'Year'] = shims2_year
 
     art = sti.ART(coverage=art_data, vls_coverage=art_vls_coverage)
     vmmc = vmmc_class(coverage=vmmc_data)
@@ -146,6 +227,12 @@ def make_interventions(vmmc_class=None, art_vls_coverage='phia',
         art,
         vmmc,
     ]
+
+    # Exp 027: PrEP is back, this time from programme initiation counts
+    # (data/prep_initiations.csv) rather than stisim's undeclared default.
+    if prep:
+        from prep_initiations import make_prep
+        interventions = interventions + make_prep()
 
     # Viral suppression as a stock target, adopted as model-v1.3 by exp 022.
     #

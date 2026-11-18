@@ -38,12 +38,17 @@ Some additions, for amending the output from above:
 
 Goals:
 1. Prevalence among women is a little too high, especially for 20-40 year olds, for the three years of prevalence survey data.
-2. I would like to calibrate the model to match the 90 90 90 numbers from the SHIMS datasets.
-3. Overall improvements I would like to see
+2. For antenatal care
+   1. begin HIV testing among women in 1992, with midpoint in 2003 and max at 2010
+   2. begin PMTCT in 2003 with max at 2010
+3. I would like to calibrate the model to match the 90 90 90 numbers from the SHIMS datasets
+   1. But I want Kasturi's data to be a sanity check. I don't want to see a massive spike in %diagnosed among men because the diagnosis rate among men vs women is lopsided. I believe Kasturi's data, which are fit to SHIMS data with logistic curves, should be a guide on this.
+   2. VLS appears to be fixed, but I want it to gently increase, following a logistic function, such that it fits the increase we see between 2017 and 2021 shims
+4. Overall improvements I would like to see
    1. Prior to 2020 diagnosis rate is too high
    2. Better matching to the 3 90s from SHIMS_909090_coverage.csv is a priority
-4. It is acceptable that the testing rates is fixed. What I want is the general population testing rates for both men and women to be fixed such that the right levels of people living with HIV know their status, and matches the calibration target data in SHIMS_909090_coverage.csv
-5. Add PrEP distribution data from spreadsheet SWZ_prep_coverage.csv
+5. It is acceptable that the testing rates is fixed. What I want is the general population testing rates for both men and women to be fixed such that the right levels of people living with HIV know their status, and matches the calibration target data in SHIMS_909090_coverage.csv
+6. Add PrEP distribution data from spreadsheet SWZ_prep_coverage.csv
    1. Oral PrEP
       1. Annual distribution numbers sourced from PrEPWatch
       2. Lasts 1 year, with 75% protective efficacy
@@ -53,7 +58,7 @@ Goals:
       2. Lasts 1 year, with 92% protective efficacy
    3. Prep distribution should target FSW, male clients of FSW, people with multiple partners, people who are unmarried, only target people who are not HIV positive
    4. Annual prep distribution refers to total number of prep initiations in each year. People already on PrEP should not receive it a second time. Spread out the distribution across the year. There may be more or fewer people on PrEP at any given time than the annual PrEP distribution.
-6. Add to the list of output plots in build_and_check_calibration.py:
+7. Add to the list of output plots in build_and_check_calibration.py:
    1. Intervention counts - the number of ART initiations, VMMC, PrEP initiations (of both types) each year. Four panels, all sharing same x axis. Points with no interpolating lines
 
 Other notes
@@ -68,3 +73,8 @@ Work plan for re-calibrating:
 3. Check that prevalence and incidence barely moved. They should, because ART coverage is forced either way.
 4. Re-run Adam's calibration (his second round plus the women 25–34 target), with the new testing rates and PrEP fixed in place. This needs the Azure VM.
 5. Check the 90s again under the new parameters. If they have drifted, repeat step 2 once.
+
+#### Alterations to most recent
+
+1. Need to emphasize don't calibrate to Kasturi's modeled outputs; but we can use these as a sanity check
+2. Need to resolve this disagreement in how data sources conflict

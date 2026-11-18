@@ -77,7 +77,34 @@ from run_sims import make_sim                  # noqa: E402
 from analyzers import PopByAgeSex              # noqa: E402
 import standard_figures as sf                  # noqa: E402
 
-OUT = Path(__file__).resolve().parent / "outputs"
+# Which model inputs to check:
+#   "row868" -- 024's point fit exactly as 024/026 ran it (outputs/)
+#   "027"    -- same 7 parameters, plus exp 027's sex-specific testing, ANC
+#               ramp and PrEP from programme data (outputs/027/). Testing
+#               multipliers from 027 step 2 (tune_testing.py): scale only,
+#               original 1990 start, ANC 1995 70->90%.
+#   "027b"   -- as "027", but testing start years and ramps calibrated to
+#               SHIMS2 2017 first + second 90 (027 step 2b, calib_testing.py;
+#               outputs/027b/).
+MODEL_CONFIG = "027b"
+EXP027 = REPO / "experiments" / "027_cascade_prep_recal" / "outputs"
+if MODEL_CONFIG == "027":
+    _chosen = sc.loadjson(EXP027 / "chosen_testing.json")  # {"m": ..., "f": ...}
+    MODEL_KW = dict(testing_pars=dict(rel_test_m=_chosen["m"], rel_test_f=_chosen["f"],
+                                      anc=True),
+                    prep=True, shims2_year=2017)
+elif MODEL_CONFIG == "027b":
+    _c = sc.loadjson(EXP027 / "calib_chosen.json")
+    MODEL_KW = dict(testing_pars=dict(gp_start=_c["gp_start"], rel_test_m=_c["rel_test_m"],
+                                      rel_test_f=_c["rel_test_f"], anc=True,
+                                      anc_start=_c["anc_start"], anc_lo=_c["anc_lo"],
+                                      anc_end=min(_c["anc_start"] + _c["anc_dur"], 2030)),
+                    prep=True, shims2_year=2017)
+else:
+    MODEL_KW = {}
+OUT = Path(__file__).resolve().parent / "outputs" / ("" if MODEL_CONFIG == "row868" else MODEL_CONFIG)
+LABEL = {"row868": "024 row 868", "027": "row 868 + 027 inputs",
+         "027b": "row 868 + 027b testing"}[MODEL_CONFIG]
 OUT.mkdir(parents=True, exist_ok=True)
 
 
@@ -172,7 +199,7 @@ hiv_pars, network_pars = build_pars(BEST)
 def run_one_seed(seed):
     sim = make_sim(seed=seed, start=START, stop=STOP, verbose=-1,
                    hiv_pars=hiv_pars, network_pars=network_pars,
-                   analyzers=[PopByAgeSex(), CascadeByAgeSex()])
+                   analyzers=[PopByAgeSex(), CascadeByAgeSex()], **MODEL_KW)
     sim.run()
     d = sim.to_df(resample="year", use_years=True, sep=".")
     d["seed"] = seed
@@ -202,7 +229,7 @@ print(f"Saved sim output to {sim_path}")
 # handles this; just don't reach into that CSV's Gender column directly
 # without re-reading that note.
 fig_path = OUT / "prevalence_fit_dtc_check.png"
-scorecard = sf.plot_prevalence_fit(df, label="DTC_check (024 row 868)",
+scorecard = sf.plot_prevalence_fit(df, label=f"DTC_check ({LABEL})",
                                    outpath=fig_path)
 print(f"Saved age-prevalence fit figure to {fig_path}")
 print("Scorecard (lower mae/bias = better fit):")
@@ -224,7 +251,7 @@ tg_incl_2021 = pd.concat([sf.load_targets(), v21], ignore_index=True)
 
 fig_path_2021 = OUT / "prevalence_fit_incl_2021_dtc_check.png"
 scorecard_2021 = sf.plot_prevalence_fit(
-    df, label="DTC_check (024 row 868) incl. 2021 VALIDATION hold-out",
+    df, label=f"DTC_check ({LABEL}) incl. 2021 VALIDATION hold-out",
     outpath=fig_path_2021, tg=tg_incl_2021)
 print(f"Saved prevalence-incl-2021 figure to {fig_path_2021}")
 print("Scorecard incl. 2021 (those strata were NOT fitted -- read as out-of-sample):")
@@ -239,7 +266,7 @@ for k, v in scorecard_2021.items():
 # caveat on the figure itself. The comparison against the SHIMS2/SHIMS3
 # incidence file in SHIMS_Datasets/ is further down (incidence checks).
 fig_inc_fit = OUT / "incidence_fit_dtc_check.png"
-sf.plot_incidence_fit(df, label="DTC_check (024 row 868)", outpath=fig_inc_fit)
+sf.plot_incidence_fit(df, label=f"DTC_check ({LABEL})", outpath=fig_inc_fit)
 print(f"Saved incidence time-series + 2016 age-band figure to {fig_inc_fit}")
 
 # %% 90-90-90 cascade over time (15-49), by sex
@@ -348,7 +375,7 @@ ax.set_title("% virally suppressed", fontsize=9.5)
 for ax in axes:
     ax.set_xlabel("year"); ax.set_xlim(2000, STOP); ax.set_ylim(0, 105)
     ax.grid(alpha=0.3); ax.legend(fontsize=7)
-fig.suptitle("90-90-90 cascade over time, ages 15-49 (DTC_check, 024 row 868)\n"
+fig.suptitle(f"90-90-90 cascade over time, ages 15-49 (DTC_check, {LABEL})\n"
             "line = mean of 10 seeds, band = +/- 1 SD (diagnosed/on-ART only)",
             y=1.06, fontsize=11)
 fig_casc_ts = OUT / "cascade_timeseries_dtc_check.png"
@@ -427,7 +454,7 @@ for row, (col, title) in enumerate(STAGE_COLS):
             ax.set_xlabel("age")
         if row == 0 and j == 0:
             ax.legend(fontsize=6.5)
-fig.suptitle("90-90-90 cascade by age, DTC_check (024 row 868)\n"
+fig.suptitle(f"90-90-90 cascade by age, DTC_check ({LABEL})\n"
             "squares = PHIA ART-coverage data; dashed model line matches its "
             "denominator (ALL PLHIV, not diagnosed)", y=1.01, fontsize=11)
 fig_casc_age = OUT / "cascade_by_age_dtc_check.png"
@@ -581,7 +608,7 @@ axes[0, 0].errorbar([], [], fmt="o", mfc="grey", mec="black", ms=8, capsize=4,
                     label="SHIMS (Wilson 95% CI, unweighted n)")
 axes[0, 0].legend(fontsize=7)
 fig.suptitle("90-90-90 time series vs SHIMS, ages 15-49 (top row) and 15+ "
-             "(bottom row), DTC_check (024 row 868)\n"
+             f"(bottom row), DTC_check ({LABEL})\n"
              "line = mean of 10 seeds, band = +/- 1 SD", y=1.01, fontsize=11)
 fig_path = OUT / "cascade_timeseries_vs_shims_dtc_check.png"
 fig.savefig(fig_path, dpi=130, bbox_inches="tight")
@@ -635,7 +662,7 @@ ax = axes[0, 0]
 ax.plot([], [], "o", mfc="white", mec="grey", mew=1.5, label="model (+/- 1 SD)")
 ax.plot([], [], "s", mfc="grey", mec="black", label="SHIMS (Wilson 95% CI)")
 ax.legend(fontsize=7, loc="lower right")
-fig.suptitle("90-90-90 by age group vs SHIMS, DTC_check (024 row 868)",
+fig.suptitle(f"90-90-90 by age group vs SHIMS, DTC_check ({LABEL})",
              y=1.01, fontsize=11)
 fig_path = OUT / "cascade_by_age_vs_shims_dtc_check.png"
 fig.savefig(fig_path, dpi=130, bbox_inches="tight")
@@ -674,7 +701,7 @@ for j, (grp, sex) in enumerate(COLS):
         ax.set_xlim(1995, STOP); ax.set_ylim(0, 105); ax.grid(alpha=0.3)
         if i == 0:
             ax.legend(fontsize=7, loc="lower right")
-fig.suptitle("90-90-90 time series vs Kasturi's modelled estimates, DTC_check (024 row 868)\n"
+fig.suptitle(f"90-90-90 time series vs Kasturi's modelled estimates, DTC_check ({LABEL})\n"
              "Kasturi 5-year bands aggregated with MODEL PLHIV weights; "
              "Kasturi '15+' = 15-84", y=1.02, fontsize=11)
 fig_path = OUT / "cascade_timeseries_vs_kasturi_dtc_check.png"
@@ -707,7 +734,7 @@ for j, year in enumerate(YEARS):
         ax.set_xlim(13, 87); ax.set_ylim(0, 105); ax.grid(alpha=0.3)
 axes[0, 0].legend(fontsize=7)
 fig.suptitle("First two 90s by age vs Kasturi's modelled estimates, "
-             "DTC_check (024 row 868)", y=1.01, fontsize=11)
+             f"DTC_check ({LABEL})", y=1.01, fontsize=11)
 fig_path = OUT / "cascade_by_age_vs_kasturi_dtc_check.png"
 fig.savefig(fig_path, dpi=130, bbox_inches="tight")
 plt.close(fig)
@@ -789,7 +816,7 @@ axes[0].set_ylabel("HIV incidence (% per year)")
 axes[0].plot([], [], "o", mfc="white", mec="grey", mew=1.5, label="model (+/- 1 SD)")
 axes[0].plot([], [], "s", mfc="grey", mec="black", label="SHIMS (95% CI)")
 axes[0].legend(fontsize=7, loc="upper right")
-fig.suptitle("HIV incidence by age group vs SHIMS, DTC_check (024 row 868)",
+fig.suptitle(f"HIV incidence by age group vs SHIMS, DTC_check ({LABEL})",
              y=1.03, fontsize=11)
 fig_path = OUT / "incidence_by_age_vs_shims_dtc_check.png"
 fig.savefig(fig_path, dpi=130, bbox_inches="tight")
@@ -827,12 +854,57 @@ axes[0, 0].plot([], [], "-", color="grey", lw=2, label="model (+/- 1 SD)")
 axes[0, 0].errorbar([], [], fmt="s", mfc="grey", mec="black", ms=8, capsize=4,
                     label="SHIMS (95% CI)")
 axes[0, 0].legend(fontsize=7, loc="upper right")
-fig.suptitle("HIV incidence over time vs SHIMS, DTC_check (024 row 868)",
+fig.suptitle(f"HIV incidence over time vs SHIMS, DTC_check ({LABEL})",
              y=1.01, fontsize=11)
 fig_path = OUT / "incidence_timeseries_vs_shims_dtc_check.png"
 fig.savefig(fig_path, dpi=130, bbox_inches="tight")
 plt.close(fig)
 print(f"Saved incidence time series vs SHIMS to {fig_path}")
+
+# %% Intervention counts per year: ART initiations, VMMC, oral and LA PrEP
+# Four panels on a shared x-axis, one point per year (mean over seeds, bar =
+# +/- 1 SD), no connecting lines. All counts are national (scaled by
+# pop_scale) and are yearly sums of the per-step "new_" results:
+#   ART  -- hiv.new_agents_on_art: agents whose ART start fell in that step.
+#           Includes RE-starts after the ART coverage correction stops
+#           someone, so it can exceed first-ever initiations.
+#   VMMC -- vmmc.new_circumcisions (programme circumcisions topping each age
+#           band up to its data/vmmc_coverage.csv target).
+#   PrEP -- prep_oral / prep_la .new_prep (027 only): initiations, which
+#           should reproduce data/prep_initiations.csv (overlaid, black x).
+# The STOP year is dropped: it holds a single timestep.
+COUNT_PANELS = [("hiv.new_agents_on_art", "ART initiations"),
+                ("vmmc.new_circumcisions", "VMMC (programme circumcisions)"),
+                ("prep_oral.new_prep", "Oral PrEP initiations"),
+                ("prep_la.new_prep", "LA-PrEP initiations")]
+PREP_DATA = {"prep_oral.new_prep": "OralTDF", "prep_la.new_prep": "LA-PREP_LEN"}
+prep_in = pd.read_csv(REPO / "data" / "prep_initiations.csv", encoding="utf-8-sig")
+
+fig, axes = plt.subplots(len(COUNT_PANELS), 1, figsize=(10, 11), sharex=True)
+for ax, (col, title) in zip(axes, COUNT_PANELS):
+    if col in df:
+        s = df[df.timevec < STOP].groupby("timevec")[col]
+        ax.errorbar(s.mean().index, s.mean().values, yerr=s.std(ddof=1).values,
+                    fmt="o", ms=4, color="#2c6fbb", capsize=2, elinewidth=0.8,
+                    label="model (mean of seeds, +/- 1 SD)")
+        if col in PREP_DATA:
+            d = prep_in[(prep_in.PrEP_type == PREP_DATA[col]) & (prep_in.Year < STOP)]
+            ax.plot(d.Year, d.Number, "x", color="black", ms=7, mew=1.5,
+                    label="programme data")
+        ax.legend(fontsize=8, loc="upper left")
+    else:
+        ax.text(0.5, 0.5, "not in this model configuration", transform=ax.transAxes,
+                ha="center", va="center", color="grey")
+    ax.set_title(title, fontsize=10, loc="left")
+    ax.set_ylabel("per year"); ax.set_ylim(bottom=0); ax.grid(alpha=0.3)
+axes[-1].set_xlabel("year"); axes[-1].set_xlim(1995, STOP)
+fig.suptitle(f"Intervention counts per year, national, DTC_check ({LABEL})",
+             y=1.0, fontsize=11)
+fig.tight_layout()
+fig_path = OUT / "intervention_counts_dtc_check.png"
+fig.savefig(fig_path, dpi=130, bbox_inches="tight")
+plt.close(fig)
+print(f"Saved intervention counts to {fig_path}")
 
 # %% Numbers behind checks A-D and the SHIMS incidence checks, as one table
 # One row per (dataset, stage, year, sex, age group): data vs model mean/SD.

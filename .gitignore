@@ -20,3 +20,5 @@ experiments/*/outputs/
 
 # Reference material: source PDFs + DHS microdata (large; license-restricted; kept local)
 references/
+
+DTC_check/outputs/

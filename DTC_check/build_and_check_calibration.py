@@ -86,7 +86,11 @@ import standard_figures as sf                  # noqa: E402
 #   "027b"   -- as "027", but testing start years and ramps calibrated to
 #               SHIMS2 2017 first + second 90 (027 step 2b, calib_testing.py;
 #               outputs/027b/).
-MODEL_CONFIG = "027b"
+#   "027c"   -- revised inputs (context_dtc.md, 2026-10-28 revision): fixed ANC
+#               schedule 1992/2003/2010, PMTCT 2003->2010, logistic VLS, and
+#               testing recalibrated to SHIMS2 with Kasturi's men:women balance
+#               as a guide (027 step 2c, calib_testing_2c.py; outputs/027c/).
+MODEL_CONFIG = "027c"
 EXP027 = REPO / "experiments" / "027_cascade_prep_recal" / "outputs"
 if MODEL_CONFIG == "027":
     _chosen = sc.loadjson(EXP027 / "chosen_testing.json")  # {"m": ..., "f": ...}
@@ -100,11 +104,20 @@ elif MODEL_CONFIG == "027b":
                                       anc_start=_c["anc_start"], anc_lo=_c["anc_lo"],
                                       anc_end=min(_c["anc_start"] + _c["anc_dur"], 2030)),
                     prep=True, shims2_year=2017)
+elif MODEL_CONFIG == "027c":
+    from interventions import ANC_KNOTS_2C  # noqa: E402
+    _c = sc.loadjson(EXP027 / "calib2c_chosen.json")
+    MODEL_KW = dict(testing_pars=dict(gp_start_m=_c["gp_start_m"], gp_start_f=_c["gp_start_f"],
+                                      rel_test_m=_c["rel_test_m"], rel_test_f=_c["rel_test_f"],
+                                      anc=True, anc_knots=ANC_KNOTS_2C),
+                    prep=True, shims2_year=2017, pmtct=True,
+                    art_vls_coverage="phia_logistic")
 else:
     MODEL_KW = {}
 OUT = Path(__file__).resolve().parent / "outputs" / ("" if MODEL_CONFIG == "row868" else MODEL_CONFIG)
 LABEL = {"row868": "024 row 868", "027": "row 868 + 027 inputs",
-         "027b": "row 868 + 027b testing"}[MODEL_CONFIG]
+         "027b": "row 868 + 027b testing",
+         "027c": "row 868 + 027c inputs and testing"}[MODEL_CONFIG]
 OUT.mkdir(parents=True, exist_ok=True)
 
 
@@ -383,85 +396,6 @@ fig.savefig(fig_casc_ts, dpi=130, bbox_inches="tight")
 plt.close(fig)
 print(f"Saved 90-90-90 time-series figure to {fig_casc_ts}")
 
-# %% 90-90-90 cascade by age, for the three PHIA survey years
-# Rows = cascade stage, columns = year, colour = sex. The "on ART" row
-# overlays calibration_data/art_coverage_by_age_sex.csv (3 age bins:
-# [15,25), [25,35), [35,45) -- it has no bins outside that range) against the
-# model's OWN of-ALL-PLHIV line (dashed), the same denominator that file
-# uses -- not the solid "of diagnosed" line, which would silently compare two
-# different quantities in the same colour. No age-stratified diagnosed or VLS
-# data exists in this project, so those rows are model-only.
-YEARS = (2011, 2016, 2021)
-
-
-def cascade_by_age(df, year):
-    """Mean-over-seeds cascade fraction per stage, sex, and 5-year age band."""
-    g = df[np.floor(df.timevec) == year]
-    rows = []
-    for sex in ("f", "m"):
-        for lo, hi in AGE_BINS:
-            inf = g[f"cascadeagesex.n_infected_{sex}_{lo}_{hi}"]
-            dx = g[f"cascadeagesex.n_diagnosed_{sex}_{lo}_{hi}"]
-            art = g[f"cascadeagesex.n_on_art_{sex}_{lo}_{hi}"]
-            eff = g[f"cascadeagesex.n_effective_art_{sex}_{lo}_{hi}"]
-            rows.append(dict(
-                sex=sex, age_low=lo,
-                p_dx=(dx / inf.replace(0, np.nan)).mean(),
-                p_art_dx=(art / dx.replace(0, np.nan)).mean(),
-                p_art_plhiv=(art / inf.replace(0, np.nan)).mean(),
-                p_vls_art=(eff / art.replace(0, np.nan)).mean()))
-    return pd.DataFrame(rows)
-
-
-art_data = pd.read_csv(REPO / "calibration_data" / "art_coverage_by_age_sex.csv")
-# 0=Male, 1=Female -- confirmed against plot_art_by_age_sex.py's own mapping
-# for this exact file, not assumed (this project has two sex-coding
-# conventions across different files; see experiments/021.../config.yaml).
-art_data["sex"] = art_data.Gender.map({0: "m", 1: "f"})
-
-STAGE_COLS = [("p_dx", "% diagnosed\n(of PLHIV)"),
-             ("p_art_dx", "% on ART\n(of diagnosed)"),
-             ("p_vls_art", "% suppressed\n(of on ART)")]
-
-fig, axes = plt.subplots(3, len(YEARS), figsize=(5.2 * len(YEARS), 12), sharex=True)
-for row, (col, title) in enumerate(STAGE_COLS):
-    for j, year in enumerate(YEARS):
-        ax = axes[row, j]
-        cba = cascade_by_age(df, year)
-        for sex in ("f", "m"):
-            s = cba[cba.sex == sex].sort_values("age_low")
-            ax.plot(s.age_low + 2.5, s[col] * 100, "-o", color=CASC_COLORS[sex],
-                    ms=3, label=CASC_NAMES[sex])
-        if col == "p_art_dx":
-            for sex in ("f", "m"):
-                s2 = cba[cba.sex == sex].sort_values("age_low")
-                ax.plot(s2.age_low + 2.5, s2.p_art_plhiv * 100, "--",
-                        color=CASC_COLORS[sex], lw=1.2, alpha=0.7,
-                        label=f"{CASC_NAMES[sex]} (of ALL PLHIV, matches data)")
-            for _, r in art_data[art_data.Year == year].iterrows():
-                lo, hi = (int(x) for x in r.AgeBin.strip("[)").split(","))
-                ax.errorbar((lo + hi) / 2, r.NationalARTPrevalence * 100,
-                            yerr=[[(r.NationalARTPrevalence - r.lb) * 100],
-                                 [(r.ub - r.NationalARTPrevalence) * 100]],
-                            fmt="s", mfc=CASC_COLORS[r.sex], mec="black", mew=1.2,
-                            ms=7, ecolor="black", capsize=3, zorder=6)
-        if row == 0:
-            ax.set_title(f"{year}", fontsize=11)
-        if j == 0:
-            ax.set_ylabel(title, fontsize=9.5)
-        ax.set_ylim(0, 105); ax.set_xlim(13, 65); ax.grid(alpha=0.3)
-        if row == 2:
-            ax.set_xlabel("age")
-        if row == 0 and j == 0:
-            ax.legend(fontsize=6.5)
-fig.suptitle(f"90-90-90 cascade by age, DTC_check ({LABEL})\n"
-            "squares = PHIA ART-coverage data; dashed model line matches its "
-            "denominator (ALL PLHIV, not diagnosed)", y=1.01, fontsize=11)
-fig_casc_age = OUT / "cascade_by_age_dtc_check.png"
-fig.savefig(fig_casc_age, dpi=130, bbox_inches="tight")
-plt.close(fig)
-print(f"Saved 90-90-90 by-age figure to {fig_casc_age}")
-
 # %% Load the two external 90-90-90 datasets (DTC_check/SHIMS_Datasets/)
 # Both are local to DTC_check, not calibration_data/ -- they are comparison
 # data for this check, NOT fitting targets (CLAUDE.md excludes ART coverage).
@@ -547,6 +481,109 @@ def model_summary(df, lo, hi):
     g = c.groupby(["year", "sex"])[stages]
     return g.mean().join(g.std(ddof=1), rsuffix="_sd").reset_index()
 
+
+# %% 90-90-90 cascade by age, for the three PHIA survey years
+# Columns = survey round, colour = sex, lines = model by 5-year band (mean
+# over seeds), from age 0 so the perinatally infected children who drive the
+# high values at 10-19 are visible. Four rows, one denominator per panel:
+#   1-3: the three conditional 90s, with SHIMS (SHIMS_909090_coverage.csv,
+#        circles, Wilson 95% CI) at its four non-overlapping bands -- the
+#        horizontal bar is the band's age range. SHIMS has no 2011 round.
+#   4:   ART coverage among ALL PLHIV, with
+#        calibration_data/art_coverage_by_age_sex.csv (squares; 15-24, 25-34,
+#        35-44 only) -- kept in its own row because its denominator differs
+#        from row 2's.
+# SHIMS2 (fieldwork 2016-17) sits in the column at shims2_year (2017 for the
+# 027 configs, the year the model compares it at; 2016 otherwise).
+# Model points are 5-year bands and SHIMS bands are 10-15 years wide, so read
+# this as a shape check; Check B below compares like with like.
+SHIMS2_YEAR = MODEL_KW.get("shims2_year", 2016)
+YEARS = (2011, SHIMS2_YEAR, 2021)
+
+
+def cascade_by_age(df, year):
+    """Mean-over-seeds cascade fraction per stage, sex, and 5-year age band."""
+    g = df[np.floor(df.timevec) == year]
+    rows = []
+    for sex in ("f", "m"):
+        for lo, hi in AGE_BINS:
+            inf = g[f"cascadeagesex.n_infected_{sex}_{lo}_{hi}"]
+            dx = g[f"cascadeagesex.n_diagnosed_{sex}_{lo}_{hi}"]
+            art = g[f"cascadeagesex.n_on_art_{sex}_{lo}_{hi}"]
+            eff = g[f"cascadeagesex.n_effective_art_{sex}_{lo}_{hi}"]
+            rows.append(dict(
+                sex=sex, age_low=lo,
+                p_dx=(dx / inf.replace(0, np.nan)).mean(),
+                p_art_dx=(art / dx.replace(0, np.nan)).mean(),
+                p_art_plhiv=(art / inf.replace(0, np.nan)).mean(),
+                p_vls_art=(eff / art.replace(0, np.nan)).mean()))
+    return pd.DataFrame(rows)
+
+
+art_data = pd.read_csv(REPO / "calibration_data" / "art_coverage_by_age_sex.csv")
+# 0=Male, 1=Female -- confirmed against plot_art_by_age_sex.py's own mapping
+# for this exact file, not assumed (this project has two sex-coding
+# conventions across different files; see experiments/021.../config.yaml).
+art_data["sex"] = art_data.Gender.map({0: "m", 1: "f"})
+art_data.loc[art_data.Year == 2016, "Year"] = SHIMS2_YEAR
+shims_by_age = shims[shims.apply(lambda r: (r.age_lo, r.age_hi) in SHIMS_AGE_BANDS, axis=1)].copy()
+shims_by_age.loc[shims_by_age.Year == 2017, "Year"] = SHIMS2_YEAR
+
+STAGE_COLS = [("p_dx", "% diagnosed\n(of PLHIV)"),
+              ("p_art_dx", "% on ART\n(of diagnosed)"),
+              ("p_vls_art", "% suppressed\n(of on ART)"),
+              ("p_art_plhiv", "% on ART\n(of ALL PLHIV)")]
+
+fig, axes = plt.subplots(len(STAGE_COLS), len(YEARS), figsize=(5.2 * len(YEARS), 15.5),
+                         sharex=True)
+for row, (col, title) in enumerate(STAGE_COLS):
+    for j, year in enumerate(YEARS):
+        ax = axes[row, j]
+        cba = cascade_by_age(df, year)
+        for sex in ("f", "m"):
+            s = cba[cba.sex == sex].sort_values("age_low")
+            ax.plot(s.age_low + 2.5, s[col] * 100, "-o", color=CASC_COLORS[sex], ms=3)
+        if col == "p_art_plhiv":
+            for _, r in art_data[art_data.Year == year].iterrows():
+                lo, hi = (int(x) for x in r.AgeBin.strip("[)").split(","))
+                ax.errorbar((lo + hi) / 2, r.NationalARTPrevalence * 100,
+                            xerr=(hi - lo) / 2,
+                            yerr=[[(r.NationalARTPrevalence - r.lb) * 100],
+                                  [(r.ub - r.NationalARTPrevalence) * 100]],
+                            fmt="s", mfc=CASC_COLORS[r.sex], mec="black", mew=1.2,
+                            ms=7, ecolor="black", elinewidth=1, capsize=3, zorder=6)
+        else:
+            d = shims_by_age[(shims_by_age.stage == col) & (shims_by_age.Year == year)]
+            for _, r in d.iterrows():
+                hi = min(r.age_hi, 65)  # 50+ drawn to the axis edge
+                ax.errorbar((r.age_lo + hi) / 2, r.p * 100, xerr=(hi - r.age_lo) / 2,
+                            yerr=[[(r.p - r.lb) * 100], [(r.ub - r.p) * 100]],
+                            fmt="o", mfc=CASC_COLORS[r.sex], mec="black", mew=1.2,
+                            ms=7, ecolor="black", elinewidth=1, capsize=3, zorder=6)
+        if row == 0:
+            ax.set_title(f"{year}" + (" (SHIMS2, fieldwork 2016-17)" if year == SHIMS2_YEAR
+                                      else " (SHIMS3)" if year == 2021 else ""), fontsize=11)
+        if j == 0:
+            ax.set_ylabel(title, fontsize=9.5)
+        ax.set_ylim(0, 105); ax.set_xlim(0, 65); ax.grid(alpha=0.3)
+        if row == len(STAGE_COLS) - 1:
+            ax.set_xlabel("age")
+
+from matplotlib.lines import Line2D  # noqa: E402
+handles = [Line2D([], [], color=CASC_COLORS["f"], marker="o", ms=3, label="Women, model"),
+           Line2D([], [], color=CASC_COLORS["m"], marker="o", ms=3, label="Men, model"),
+           Line2D([], [], ls="", marker="o", mfc="grey", mec="black", ms=7,
+                  label="SHIMS 90-90-90 (rows 1-3), colour = sex; bars = age band, 95% CI"),
+           Line2D([], [], ls="", marker="s", mfc="grey", mec="black", ms=7,
+                  label="PHIA ART coverage among all PLHIV (row 4), colour = sex")]
+fig.legend(handles=handles, loc="upper center", ncol=2, fontsize=9,
+           bbox_to_anchor=(0.5, 0.995), frameon=False)
+fig.suptitle(f"90-90-90 cascade by age, DTC_check ({LABEL})", y=1.02, fontsize=11)
+fig.tight_layout(rect=(0, 0, 1, 0.965))
+fig_casc_age = OUT / "cascade_by_age_dtc_check.png"
+fig.savefig(fig_casc_age, dpi=130, bbox_inches="tight")
+plt.close(fig)
+print(f"Saved 90-90-90 by-age figure to {fig_casc_age}")
 
 # %% Kasturi's 5-year bands -> 15-49 and 15+ aggregates
 # Kasturi's file has fractions only, no population sizes, so aggregating

@@ -31,6 +31,23 @@ def anc_test_prob(years, start=1995, p_lo=0.70, p_hi=0.90, end=2015):
     return 1 - (1 - P) ** (1 / 3)
 
 
+# Exp 027 step 2c (DTC_check/context_dtc.md, 2026-10-28 revision): ANC testing
+# "begin[s] in 1992, with midpoint in 2003 and max at 2010". Per-pregnancy
+# coverage, interpolated linearly between the knots, 0 before and flat after.
+# The maximum (90%) is the researcher's earlier ANC specification.
+ANC_KNOTS_2C = ((1992, 0.0), (2003, 0.45), (2010, 0.90))
+
+
+def anc_test_prob_knots(years, knots=ANC_KNOTS_2C):
+    """Per-TIMESTEP ANC testing probability from per-PREGNANCY coverage knots.
+
+    Same per-pregnancy -> per-step conversion as `anc_test_prob`.
+    """
+    k_years, k_cov = zip(*knots)
+    P = np.interp(np.asarray(years, dtype=float), k_years, k_cov)
+    return 1 - (1 - P) ** (1 / 3)
+
+
 def get_testing_products(testing_pars=None):
     """
     Define HIV products and testing interventions
@@ -44,9 +61,13 @@ def get_testing_products(testing_pars=None):
         gp_start (optional, default 1990): year general-population testing
             begins; it ramps linearly from 0 then to rel x 0.5 in 2020 and
             rel x 0.6 in 2040 (the original ramp's 2020/2040 anchors).
+            gp_start_m / gp_start_f (optional) set it per sex.
         anc (bool): use an ANC ramp (anc_test_prob) instead of a flat 0.9 per
             step from the sim start. anc_start / anc_lo / anc_end (optional)
             override anc_test_prob's defaults.
+        anc_knots (optional): ((year, coverage), ...) per-pregnancy ANC
+            coverage knots (anc_test_prob_knots); takes precedence over
+            anc_start / anc_lo / anc_end. Exp 027 step 2c uses ANC_KNOTS_2C.
     """
 
     scaleup_years = np.arange(1990, 2021)  # Years for testing
@@ -83,8 +104,10 @@ def get_testing_products(testing_pars=None):
     else:
         # Exp 027: the original ramp's 2020/2040 anchors, a calibrated start
         # year (0 before it), scaled separately for men and women.
-        gp_start = testing_pars.get('gp_start', 1990)
-        gp_shape = np.interp(years, [gp_start, 2020, 2040], [0, 0.5, 0.6])
+        def gp_shape(s):
+            start = testing_pars.get(f'gp_start_{s}', testing_pars.get('gp_start', 1990))
+            return np.interp(years, [start, 2020, 2040], [0, 0.5, 0.6])
+
         def male_elig(sim):
             return other_eligibility(sim) & sim.people.male
 
@@ -93,7 +116,7 @@ def get_testing_products(testing_pars=None):
 
         gp_tests = [
             sti.HIVTest(years=years,
-                        test_prob_data=np.clip(gp_shape * testing_pars[f'rel_test_{s}'], 0, 1),
+                        test_prob_data=np.clip(gp_shape(s) * testing_pars[f'rel_test_{s}'], 0, 1),
                         name=f'other_testing_{s}', eligibility=elig,
                         label=f'other_testing_{s}')
             for s, elig in (('m', male_elig), ('f', female_elig))]
@@ -118,12 +141,16 @@ def get_testing_products(testing_pars=None):
 
     if testing_pars is not None and testing_pars.get('anc', False):
         anc_years = np.arange(1985, 2041)
-        anc_testing = sti.HIVTest(
-            years=anc_years,
-            test_prob_data=anc_test_prob(
+        if 'anc_knots' in testing_pars:
+            anc_prob = anc_test_prob_knots(anc_years, testing_pars['anc_knots'])
+        else:
+            anc_prob = anc_test_prob(
                 anc_years, **{arg: testing_pars[k] for k, arg in
                               (('anc_start', 'start'), ('anc_lo', 'p_lo'), ('anc_end', 'end'))
-                              if k in testing_pars}),
+                              if k in testing_pars})
+        anc_testing = sti.HIVTest(
+            years=anc_years,
+            test_prob_data=anc_prob,
             dt_scale=False,
             name='anc_testing',
             eligibility=anc_eligibility,
@@ -154,10 +181,10 @@ def _normalize_age_bin_format(df):
 
 def make_interventions(vmmc_class=None, art_vls_coverage='phia',
                        vls_stock_target=True, art_coverage=None,
-                       testing_pars=None, prep=False, shims2_year=2016):
-    # testing_pars / prep: exp 027's cascade and PrEP inputs. Both default to
-    # off, so every earlier experiment is unchanged. See get_testing_products
-    # and prep_initiations.py.
+                       testing_pars=None, prep=False, shims2_year=2016, pmtct=False):
+    # testing_pars / prep / pmtct: exp 027's cascade, PrEP and PMTCT inputs.
+    # All default to off, so every earlier experiment is unchanged. See
+    # get_testing_products, prep_initiations.py and pmtct.py.
     # Upstream sti.VMMC gained prevalence/stock-target semantics in stisim 1.5.9
     # -- the behaviour the in-repo VMMCPrevalenceTarget subclass existed to
     # supply. Exp 017 confirmed the two are behaviourally identical (circumcision
@@ -196,20 +223,28 @@ def make_interventions(vmmc_class=None, art_vls_coverage='phia',
     # 65x difference in residual transmission. Exp 021 measured that default as
     # overstating population viral suppression by 8.8 percentage points in 2016.
     # None is retained only so 021's control arm stays reproducible.
+    #
+    # 'phia_logistic' (exp 027 step 2c): the same two survey points joined by a
+    # logistic curve per sex (vls_construction.to_vls_logistic), rising from an
+    # assumed 80% in the early ART era to a 98% ceiling, instead of flat to
+    # SHIMS2 then linear to SHIMS3.
     if isinstance(art_vls_coverage, str):
-        if art_vls_coverage != 'phia':
-            raise ValueError(f"art_vls_coverage must be 'phia', None, or a "
-                             f"coverage object; got {art_vls_coverage!r}")
+        if art_vls_coverage not in ('phia', 'phia_logistic'):
+            raise ValueError(f"art_vls_coverage must be 'phia', 'phia_logistic', None, "
+                             f"or a coverage object; got {art_vls_coverage!r}")
         # Imported lazily: only needed when the default is used, and it keeps
         # interventions.py importable without the survey transcription.
-        from vls_construction import build, to_vls_coverage
-        # fill_back_to: no measurement exists before SHIMS2 (2016), so
-        # suppression among the treated is held flat back to the model start.
-        # Early-ART-era suppression was plausibly worse, so this understates the
-        # correction rather than overstating it. Recorded in 021's config.
-        art_vls_coverage = to_vls_coverage(build(), fill_back_to=1985)
-        if shims2_year != 2016:
-            art_vls_coverage.loc[art_vls_coverage.Year == 2016, 'Year'] = shims2_year
+        from vls_construction import build, to_vls_coverage, to_vls_logistic
+        if art_vls_coverage == 'phia_logistic':
+            art_vls_coverage = to_vls_logistic(build(), shims2_year=shims2_year)
+        else:
+            # fill_back_to: no measurement exists before SHIMS2 (2016), so
+            # suppression among the treated is held flat back to the model start.
+            # Early-ART-era suppression was plausibly worse, so this understates the
+            # correction rather than overstating it. Recorded in 021's config.
+            art_vls_coverage = to_vls_coverage(build(), fill_back_to=1985)
+            if shims2_year != 2016:
+                art_vls_coverage.loc[art_vls_coverage.Year == 2016, 'Year'] = shims2_year
 
     art = sti.ART(coverage=art_data, vls_coverage=art_vls_coverage)
     vmmc = vmmc_class(coverage=vmmc_data)
@@ -227,6 +262,12 @@ def make_interventions(vmmc_class=None, art_vls_coverage='phia',
         art,
         vmmc,
     ]
+
+    # Exp 027 step 2c: PMTCT prophylaxis for diagnosed pregnant women not on
+    # ART, 2003-2010 ramp. After ART, which owns the on-ART mothers.
+    if pmtct:
+        from pmtct import PMTCT
+        interventions = interventions + [PMTCT()]
 
     # Exp 027: PrEP is back, this time from programme initiation counts
     # (data/prep_initiations.csv) rather than stisim's undeclared default.

@@ -60,6 +60,7 @@ NB `vls_coverage` defaults any stratum it is not given to 100% suppression, so
 a partial table silently reintroduces the very default it is meant to replace.
 """
 
+import numpy as np
 import pandas as pd
 
 OUT = "data/eswatini_vls.csv"
@@ -256,6 +257,43 @@ def to_vls_coverage(df, years=None, fill_back_to=None):
     if years is not None:
         out = out[out.Year.isin(years)]
     return out.reset_index(drop=True)
+
+
+def to_vls_logistic(df, lower=0.80, upper=0.98, shims2_year=2017.0,
+                    years=range(1985, 2041)):
+    """Like `to_vls_coverage`, but a logistic curve per sex instead of
+    flat-then-linear. Exp 027 step 2c (DTC_check/context_dtc.md, 2026-10-28:
+    VLS should "gently increase, following a logistic function, such that it
+    fits the increase we see between 2017 and 2021 SHIMS").
+
+        p_vls(t) = lower + (upper - lower) / (1 + exp(-k (t - t0)))
+
+    with k and t0 solved per sex so the curve passes exactly through the
+    SHIMS2 value at `shims2_year` and the SHIMS3 value at 2021.0. Two points
+    fix two parameters; the asymptotes are ASSUMPTIONS and the caller should
+    record them as such:
+
+      - `lower` (0.80) is suppression among the treated in the early ART era,
+        which no survey measured (see the module docstring). Below SHIMS2's
+        90-92%, consistent with the note on `fill_back_to` that the flat
+        back-fill understated early non-suppression.
+      - `upper` (0.98) is roughly the best SHIMS3 subgroup (50+: 98.2% men,
+        98.9% women), so projections level off there rather than at 100%.
+
+    Returns annual rows (Year / AgeBin / Gender / p_vls); sti.ART interpolates
+    linearly between them.
+    """
+    art = df[df.measure == "vls_given_art"]
+    rows = []
+    for sex, g in art.groupby("sex"):
+        v = g.set_index("year").value
+        z = [np.log((x - lower) / (upper - x)) for x in (v[2016], v[2021])]
+        k = (z[1] - z[0]) / (2021.0 - shims2_year)
+        t0 = shims2_year - z[0] / k
+        for y in years:
+            p = lower + (upper - lower) / (1 + np.exp(-k * (y - t0)))
+            rows.append(dict(Year=y, AgeBin="[15,100)", Gender=sex, p_vls=p))
+    return pd.DataFrame(rows).sort_values(["Year", "Gender"]).reset_index(drop=True)
 
 
 if __name__ == "__main__":

@@ -24,7 +24,8 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
              hiv_pars=None, network_pars=None, vmmc_class=None, hiv_class=None,
              datafolder=None, art_vls_coverage='phia',
              vls_stock_target=True, extra_interventions=None,
-             art_coverage=None, testing_pars=None, prep=False, shims2_year=2016):
+             art_coverage=None, testing_pars=None, prep=False, shims2_year=2016,
+             pmtct=False):
 
     # Condom data: stisim defaults x0.5 for non-marital pairings (act-level usage
     # is roughly half of DHS-reported "ever-used at last sex"). LL pairing kept
@@ -88,10 +89,10 @@ def make_sim(seed=1, start=1985, stop=2031, verbose=1/12, analyzers=None,
                                        vls_stock_target=vls_stock_target,
                                        art_coverage=art_coverage,
                                        testing_pars=testing_pars, prep=prep,
-                                       shims2_year=shims2_year)
-    # testing_pars / prep / shims2_year: exp 027's sex-specific testing, ANC
-    # ramp, PrEP from programme data, and SHIMS2 inputs pinned to 2017. All
-    # off by default -- see interventions.py.
+                                       shims2_year=shims2_year, pmtct=pmtct)
+    # testing_pars / prep / shims2_year / pmtct: exp 027's sex-specific
+    # testing, ANC ramp, PrEP from programme data, SHIMS2 inputs pinned to
+    # 2017, and PMTCT prophylaxis. All off by default -- see interventions.py.
     # extra_interventions run after the defaults, so anything that re-targets a
     # state the defaults set (e.g. vls_stock_target.VLSStockTarget overriding the
     # suppression status sti.ART assigns at initiation) takes precedence.

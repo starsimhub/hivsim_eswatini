@@ -90,8 +90,15 @@ import standard_figures as sf                  # noqa: E402
 #               schedule 1992/2003/2010, PMTCT 2003->2010, logistic VLS, and
 #               testing recalibrated to SHIMS2 with Kasturi's men:women balance
 #               as a guide (027 step 2c, calib_testing_2c.py; outputs/027c/).
-MODEL_CONFIG = "027c"
-EXP027 = REPO / "experiments" / "027_cascade_prep_recal" / "outputs"
+#   "027d"   -- context_dtc.md 2026-11-19: testing per sex x age cohort (0-24,
+#               25-34, 35-49, 50+), forced ART on the same cohorts (0-14 as
+#               15-24), logistic ANC 1992.5/2003/2010, SHIMS2 VMMC totals at
+#               2017, PMTCT and logistic VLS as 027c; testing recalibrated by
+#               age (027 step 2d, calib_testing_2d.py; outputs/027d/).
+MODEL_CONFIG = "027d"
+# Chosen testing parameters, copied out of the gitignored outputs/ so a fresh
+# clone can run every configuration.
+EXP027 = REPO / "experiments" / "027_cascade_prep_recal" / "params"
 if MODEL_CONFIG == "027":
     _chosen = sc.loadjson(EXP027 / "chosen_testing.json")  # {"m": ..., "f": ...}
     MODEL_KW = dict(testing_pars=dict(rel_test_m=_chosen["m"], rel_test_f=_chosen["f"],
@@ -112,12 +119,21 @@ elif MODEL_CONFIG == "027c":
                                       anc=True, anc_knots=ANC_KNOTS_2C),
                     prep=True, shims2_year=2017, pmtct=True,
                     art_vls_coverage="phia_logistic")
+elif MODEL_CONFIG == "027d":
+    _c = sc.loadjson(EXP027 / "calib2d_chosen.json")
+    MODEL_KW = dict(testing_pars=dict(gp_start_m=_c["gp_start_m"], gp_start_f=_c["gp_start_f"],
+                                      rel_test_age={s: [_c[f"rel_{s}_{k}"] for k in ("0", "25", "35", "50")]
+                                                    for s in "mf"},
+                                      anc=True, anc_logistic=True),
+                    prep=True, shims2_year=2017, pmtct=True, art_vls_coverage="phia_logistic",
+                    art_coverage="cohorts", vmmc_shims2=True)
 else:
     MODEL_KW = {}
 OUT = Path(__file__).resolve().parent / "outputs" / ("" if MODEL_CONFIG == "row868" else MODEL_CONFIG)
 LABEL = {"row868": "024 row 868", "027": "row 868 + 027 inputs",
          "027b": "row 868 + 027b testing",
-         "027c": "row 868 + 027c inputs and testing"}[MODEL_CONFIG]
+         "027c": "row 868 + 027c inputs and testing",
+         "027d": "row 868 + 027d age-structured cascade"}[MODEL_CONFIG]
 OUT.mkdir(parents=True, exist_ok=True)
 
 

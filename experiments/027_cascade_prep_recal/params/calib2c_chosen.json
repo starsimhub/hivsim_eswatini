@@ -1,0 +1,12 @@
+{
+  "gp_start_m": 1997.5969433794332,
+  "gp_start_f": 2002.835830385692,
+  "rel_test_m": 0.5218802163637073,
+  "rel_test_f": 0.5320280824570593,
+  "loss": 71.66675035087609,
+  "loss_shims": 49.3242586424127,
+  "loss_kas": 22.342491708463385,
+  "art_short": 0.0145821308611282,
+  "pid": 20001,
+  "selected_by": "not the argmin; picked on the researcher's stated priorities (balance of diagnosis by sex, no spike): 3rd by total loss (71.7 vs 68.4, within 8-seed noise) but lowest Kasturi-guide loss; first 90 within SHIMS2 CI for both sexes; no men-only ART|dx spike (2005: 0.23 vs argmin 0.39). Argmin kept as calib2c_argmin.json."
+}

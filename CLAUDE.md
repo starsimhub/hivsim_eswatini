@@ -55,10 +55,21 @@ parameter space pays off. **Leading method (deferred to
   SHIMS1 publishes 18-49 and `PopByAgeSex` works in 5-year bands, so
   the model can bracket that range but not express it.
 
+- **SHIMS2 90-90-90 — added 2026-11-19 (exp 027, Daniel Citron).**
+  `DTC_check/SHIMS_Datasets/SHIMS_909090_coverage.csv`, Year 2017 rows:
+  % diagnosed and % on ART among diagnosed, by sex, for 15-24, 25-34,
+  35-49 and 15+, compared to the model at 2017.0. These fit only the
+  *testing* inputs (start year per sex; level per sex x age cohort), with
+  row 868's transmission parameters fixed — not the 7 HM parameters.
+  Kasturi's modelled aware/ART series is a guide on the men:women balance
+  of diagnosis, not a target. See `experiments/027_cascade_prep_recal`.
+
 **Validation hold-out (NOT a fitting target):**
 - 2021 incidence (`calibration_data/incidence_2021_VALIDATION_ONLY.csv`)
+- 2021 (SHIMS3) prevalence and 90-90-90 values (exp 027)
 
-**Explicitly excluded from fitting now:** ART coverage, VMMC, the
+**Explicitly excluded from fitting now:** ART coverage (an input: forced
+from SHIMS data, by age cohort in exp 027's configuration), VMMC, the
 age-banded incidence rows above, anything else not listed here.
 
 **When the target set changes, update this list in the same commit.**
